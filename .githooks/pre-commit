@@ -1,0 +1,33 @@
+#!/bin/bash
+# Не даёт закоммитить ключи, токены, личные файлы и тяжёлое. Включается install.sh (git config core.hooksPath .githooks).
+# Своё личное слово (ник, имя клиента) добавь в .githooks/stop-words.local — по строке на слово, файл в Git не идёт.
+fail=0
+files=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$files" ] && exit 0
+
+# 1. Запрещённые файлы
+while IFS= read -r f; do
+  case "$f" in
+    *.env|.env|local.md|*cookies*.txt|*.mp4|*.mov|*.wav|*.mp3|*.m4a|внешнее/*/*)
+      case "$f" in .env.example|внешнее/паспорта/*) ;; *) echo "✗ нельзя в Git: $f"; fail=1 ;; esac ;;
+  esac
+  size=$(git cat-file -s ":$f" 2>/dev/null || echo 0)
+  [ "$size" -gt 5000000 ] && { echo "✗ файл больше 5 МБ: $f"; fail=1; }
+done <<< "$files"
+
+# 2. Ключи и токены в содержимом (по шаблонам известных сервисов)
+pat='(sk-[A-Za-z0-9_-]{20,}|sk_[a-f0-9]{30,}|AIza[0-9A-Za-z_-]{30,}|xox[abp]-[0-9A-Za-z-]{10,}|ghp_[0-9A-Za-z]{30,}|github_pat_[0-9A-Za-z_]{30,}|[0-9]{8,10}:AA[0-9A-Za-z_-]{30,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(API_KEY|TOKEN|SECRET)[A-Z_]*[[:space:]]*=[[:space:]]*[A-Za-z0-9_-]{16,})'
+# 3. Личные пути
+pat2='(/Users/[A-Za-z0-9._-]+/|/home/[A-Za-z0-9._-]+/|C:\\Users\\)'
+extra=""
+[ -f .githooks/stop-words.local ] && extra=$(grep -v '^\s*$' .githooks/stop-words.local | paste -sd'|' -)
+while IFS= read -r f; do
+  [ -f "$f" ] || continue
+  case "$f" in *.ttf|*.otf|*.png|*.jpg|*.jpeg|*.webp) continue ;; esac
+  if git show ":$f" | grep -nE "$pat" >/dev/null; then echo "✗ похоже на ключ/токен: $f"; git show ":$f" | grep -nE "$pat" | cut -c1-80; fail=1; fi
+  if git show ":$f" | grep -nE "$pat2" | grep -v 'pre-commit' >/dev/null; then echo "✗ личный путь: $f"; git show ":$f" | grep -nE "$pat2" | cut -c1-100; fail=1; fi
+  if [ -n "$extra" ] && git show ":$f" | grep -niE "$extra" >/dev/null; then echo "✗ личное слово из stop-words.local: $f"; fail=1; fi
+done <<< "$files"
+
+[ $fail = 1 ] && { echo "Коммит остановлен. Убери это из файлов (ключи — только в .env, личное — в local.md)."; exit 1; }
+exit 0

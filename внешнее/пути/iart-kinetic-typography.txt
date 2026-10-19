@@ -1,0 +1,12 @@
+/.claude-plugin/marketplace.json
+/.claude-plugin/plugin.json
+/LICENSE
+/README.md
+/scripts/README.md
+/scripts/contact-sheet.sh
+/scripts/probe-mp4.sh
+/scripts/seek-shot.sh
+/showcase.html
+/skills/kinetic-typography/README.md
+/skills/kinetic-typography/SKILL.md
+/skills/kinetic-typography/references/reveal-recipes.md
