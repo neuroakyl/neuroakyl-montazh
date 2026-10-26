@@ -1,6 +1,7 @@
 """Голос ElevenLabs (v4) + тайминг слов из выравнивания по буквам.
 
-  python3 -I golos.py ТЕКСТ.txt ПАПКА_РОЛИКА --voice adam|brian [--model eleven_v4] [--stability 0.5]
+  python3 -I golos.py ТЕКСТ.txt ПАПКА_РОЛИКА --voice adam|brian [--lang ru|ky|en|…] [--model eleven_v4] [--stability 0.5]
+Язык — код ISO 639-1 (ru, ky, kk, uz, en …), по умолчанию ru; `--lang auto` — ElevenLabs определит сам.
 Текст может содержать теги эмоций v4 в квадратных скобках: [excited], [serious], [whispers] …
 Результат в ПАПКА/assets: voice.mp3 (как пришёл), voice.wav (highpass + компрессор + −16 LUFS);
 ПАПКА/words.json — слова без тегов: [{text, start, end}]. Расход символов пишется в расход.log рядом.
@@ -51,13 +52,16 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("text"); ap.add_argument("job")
     ap.add_argument("--voice", default="adam"); ap.add_argument("--model", default="eleven_v4")
+    ap.add_argument("--lang", default="ru", help="язык ролика: ru, ky, en … или auto")
     ap.add_argument("--stability", type=float, default=0.5); ap.add_argument("--speed", type=float, default=1.0)
     a = ap.parse_args()
     text = pathlib.Path(a.text).read_text().strip()
     job = pathlib.Path(a.job); (job / "assets").mkdir(parents=True, exist_ok=True)
     vid = VOICES.get(a.voice, a.voice)
-    body = {"text": text, "model_id": a.model, "language_code": "ky",
+    body = {"text": text, "model_id": a.model,
             "voice_settings": {"stability": a.stability, "similarity_boost": 0.8, "speed": a.speed}}
+    if a.lang != "auto":
+        body["language_code"] = a.lang
     req = urllib.request.Request(f"https://api.elevenlabs.io/v1/text-to-speech/{vid}/with-timestamps?output_format=mp3_44100_128",
                                  data=json.dumps(body).encode(), headers={"xi-api-key": key(), "Content-Type": "application/json"})
     try:

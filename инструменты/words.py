@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Тайминги каждого слова для ролика на кыргызском (HeyGen-аватар и любые другие).
+"""Тайминги каждого слова по записанной речи на любом языке (HeyGen-аватар, своя запись, чужой голос).
 
 Как работает:
   1. Достаёт звук из видео (ffmpeg, 16 кГц моно).
@@ -18,8 +18,11 @@
 Выход: JSON-список [{"text": "Эртең", "start": 0.12, "end": 0.48}, ...] в секундах.
 Если после слова пауза >= --min-pause, у слова есть поле "pause_after" (секунды).
 
+Язык — --lang (ru по умолчанию, ky, kk, uz, en …): от него зависят романизация для MMS и язык OCR.
+
 Примеры:
   .venv/bin/python words.py video.mp4 --text script.txt -o 1-words.json
+  .venv/bin/python words.py video.mp4 --text script.txt --lang ky -o 1-words.json
   .venv/bin/python words.py video.mp4 --script-json Партия-1.json --n 1 -o 1-words.json
   .venv/bin/python words.py video.mp4 --source bar -o words.json   # без текста, только полоса+OCR
 """
@@ -36,6 +39,10 @@ import time
 import numpy as np
 
 SR = 16000
+# ISO 639-1 → коды uroman (романизация для MMS) и языки OCR macOS
+UROMAN = {"ru": "rus", "ky": "kir", "kk": "kaz", "uz": "uzb", "tg": "tgk", "uk": "ukr", "be": "bel",
+          "en": "eng", "tr": "tur", "de": "deu", "es": "spa", "fr": "fra"}
+OCR_LANGS = {"en": ["en-US"], "tr": ["tr-TR"], "de": ["de-DE"], "es": ["es-ES"], "fr": ["fr-FR"]}
 
 
 def log(*a):
@@ -106,8 +113,8 @@ def bar_cues(video, bar_h):
     return [tuple(x) for x in cues], fps
 
 
-def ocr_cues(video, bar_h, cues):
-    """Читает слово каждой реплики встроенным OCR macOS (Vision, ru-RU)."""
+def ocr_cues(video, bar_h, cues, lang="ru"):
+    """Читает слово каждой реплики встроенным OCR macOS (Vision; кириллица — ru-RU)."""
     import cv2
     import Vision
     from Foundation import NSData
@@ -118,7 +125,7 @@ def ocr_cues(video, bar_h, cues):
         h = Vision.VNImageRequestHandler.alloc().initWithData_options_(data, None)
         req = Vision.VNRecognizeTextRequest.alloc().init()
         req.setRecognitionLevel_(0)
-        req.setRecognitionLanguages_(["ru-RU"])
+        req.setRecognitionLanguages_(OCR_LANGS.get(lang, ["ru-RU"]))
         req.setUsesLanguageCorrection_(False)
         h.performRequests_error_([req], None)
         return " ".join(r.topCandidates_(1)[0].string() for r in (req.results() or []))
@@ -184,7 +191,7 @@ def reconcile(script_words, ocr_words):
 
 
 # ---------------------------------------------------------------- MMS forced alignment
-def mms_align(wav_path, words, device="cpu"):
+def mms_align(wav_path, words, device="cpu", lang="ru"):
     import soundfile as sf
     import torch
     import torchaudio
@@ -199,7 +206,7 @@ def mms_align(wav_path, words, device="cpu"):
     dic = bundle.get_dict(star=None)
 
     def norm(w):
-        r = U.romanize_string(w, lcode="kir").lower()
+        r = U.romanize_string(w, lcode=UROMAN.get(lang)).lower()
         r = re.sub(r"[^a-z']", "", r)
         return r or "a"
 
@@ -266,6 +273,7 @@ def main():
     ap.add_argument("--bar-lead", type=float, default=0.09, help="на сколько полоса HeyGen опережает звук, с")
     ap.add_argument("--max-diff", type=float, default=0.15,
                     help="если MMS и полоса расходятся сильнее (с), берётся время из полосы")
+    ap.add_argument("--lang", default="ru", help="язык речи: ru, ky, kk, uz, en …")
     ap.add_argument("--device", default="cpu", help="cpu или mps (на M2 скорость одинаковая)")
     ap.add_argument("-o", "--out", default="words.json")
     args = ap.parse_args()
@@ -292,7 +300,7 @@ def main():
     if cues and (words is None or len(words) != len(cues)):
         if sys.platform == "darwin":
             log(f"[текст] слов в тексте {len(words) if words else 0} != {len(cues)} в полосе -> OCR полосы")
-            ocr_words = ocr_cues(args.video, bar_h, cues)
+            ocr_words = ocr_cues(args.video, bar_h, cues, args.lang)
             if words:
                 words, notes = reconcile(words, ocr_words)
             else:
@@ -320,7 +328,7 @@ def main():
             res = bar_words
         else:
             t1 = time.time()
-            res = mms_align(wav, words, args.device)
+            res = mms_align(wav, words, args.device, args.lang)
             log(f"[mms] выравнивание {time.time() - t1:.1f} с")
     if bar_words and args.source != "bar":
         d = np.array([r["start"] - b["start"] for r, b in zip(res, bar_words)])
