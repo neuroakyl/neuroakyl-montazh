@@ -22,3 +22,8 @@ out/
 __pycache__/
 *.pyc
 .githooks/stop-words.local
+
+# собранные программы инструментов
+инструменты/.litsa-bin
+*.litsa.json
+*.litsa.jpg
