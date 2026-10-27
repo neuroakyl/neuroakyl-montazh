@@ -9,6 +9,8 @@ const FACES: [string, string, string?][] = [
   [F.head2, "FiraSansExtraCondensed-ExtraBold.ttf"],
   [F.ui, "Montserrat-Variable.ttf", "100 900"],
   [F.script, "GreatVibesKG.ttf"],
+  [F.serif, "PlayfairDisplay-Italic-Variable.ttf", "400 900"],
+  [F.narrow, "Oswald-Variable.ttf", "200 700"],
 ];
 
 export function useFonts() {
