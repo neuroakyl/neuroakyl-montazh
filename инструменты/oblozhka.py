@@ -3,7 +3,8 @@
   python3 -I oblozhka.py stil                         показать стиль аккаунта (обложка-бренд.json в корне навыка)
   python3 -I oblozhka.py stil --accent "#FFD400" [--font montserrat|fira|oswald] [--plate|--text-accent] [--outline 0]
                                                       записать стиль; один раз на аккаунт, дальше одинаков во всей ленте
-  python3 -I oblozhka.py obrazcy ДВИЖОК               лист «один ролик в 4 цветах», чтобы человек выбрал стиль
+  python3 -I oblozhka.py obrazcy [ДВИЖОК] [--dizainy "жёлтый/montserrat/plate;#E30613/fira/text"]
+                                                      первая обложка в 3–4 дизайнах (цвет/шрифт/акцент) → человек выбирает → stil
   python3 -I oblozhka.py kadry ВИДЕО [-n 8]           кадры с лицом в паузах речи (words.json рядом) → лист, выбрать номер
   python3 -I oblozhka.py vyrezat ВХОД [ВЫХОД.png]     вырезать человека или предмет: картинка, ссылка или видео@секунда
   python3 -I oblozhka.py iskat "Mi-8 helicopter" [-n 8]  картинки по теме (Wikimedia Commons, крупные) → лист, выбрать номер
@@ -24,6 +25,8 @@ BIN = HERE / ".vyrezat-bin"
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/130 Safari/537.36"
 # Готовые стили: главный цвет + чёрный + белый. Акцент проверяется на контраст при сборке.
 PRESETS = {"жёлтый": "#FFD400", "красный": "#FF2D2D", "оранжевый": "#FF7A00", "лайм": "#C8FF00"}
+# Дизайны для первого выбора, если человек не назвал свои: разные цвет, шрифт и подача акцента
+DESIGNS = "жёлтый/montserrat/plate;красный/fira/plate;оранжевый/montserrat/text;лайм/fira/text"
 
 
 def get(url, out=None):
@@ -78,7 +81,8 @@ def stil(a):
 
 def brand_to(eng):
     if not BRAND.exists():
-        raise SystemExit(f"нет стиля обложек {BRAND.name}: один раз спроси человека главный цвет (obrazcy покажет варианты) и запиши: oblozhka.py stil --accent …")
+        raise SystemExit(f"нет стиля обложек {BRAND.name}: есть брендбук — возьми цвет и шрифт оттуда; нет — спроси, какой дизайн хочется, "
+                         "и покажи первую обложку в нескольких дизайнах (obrazcy); выбранный запиши: oblozhka.py stil … (обложка.md §0)")
     shutil.copy(BRAND, eng / "src" / "cover" / "brand.json")
 
 
@@ -171,21 +175,26 @@ def sdelat(a):
 
 
 def obrazcy(a):
+    """Выбор дизайна ленты: та же обложка в нескольких дизайнах. Только при первом ролике или когда человек просит сменить дизайн."""
     eng = engine(a.dvizhok)
-    brand_to(eng) if BRAND.exists() else shutil.copy(_env.ROOT / "обложка-бренд.example.json", eng / "src" / "cover" / "brand.json")
-    keep = (eng / "src" / "cover" / "brand.json").read_text()
+    base = json.loads((BRAND if BRAND.exists() else _env.ROOT / "обложка-бренд.example.json").read_text())
+    dst = eng / "src" / "cover" / "brand.json"
+    keep = dst.read_text()
     vd = eng.parent / "обложка"
-    outs = []
+    outs, legend = [], []
     try:
-        for name, hexv in PRESETS.items():
-            b = json.loads(keep); b["accent"] = hexv
-            (eng / "src" / "cover" / "brand.json").write_text(json.dumps(b))
-            o = vd / f"стиль-{name}.jpg"
+        for i, d in enumerate(a.dizainy.split(";"), 1):
+            color, font, style = (d.split("/") + ["montserrat", "plate"])[:3]
+            b = dict(base, accent=PRESETS.get(color, color).upper(), font=font, accentStyle=style)
+            dst.write_text(json.dumps(b))
+            o = vd / f"дизайн-{i}.jpg"
             render(eng, [{"out": str(o), "comp": "Cover", "props": {}}])
             outs.append(o)
+            legend.append(f"{i}: oblozhka.py stil --accent \"{b['accent']}\" --font {font} {'--plate' if style == 'plate' else '--text-accent'}")
     finally:
-        (eng / "src" / "cover" / "brand.json").write_text(keep)
-    print("образцы (1–4:", ", ".join(PRESETS), "):", sheet(outs, vd / "стили.jpg"))
+        dst.write_text(keep)
+    print("дизайны:", sheet(outs, vd / "дизайны.jpg"))
+    print("\n".join(legend))
 
 
 # ── материалы ─────────────────────────────────────────────────────────────────
@@ -307,7 +316,7 @@ def main():
     sp = ap.add_subparsers(dest="cmd", required=True)
     s = sp.add_parser("stil"); s.add_argument("--accent"); s.add_argument("--font"); s.add_argument("--outline", type=int)
     s.add_argument("--dark"); s.add_argument("--light"); s.add_argument("--plate", action="store_true"); s.add_argument("--text-accent", action="store_true")
-    s = sp.add_parser("obrazcy"); s.add_argument("dvizhok", nargs="?")
+    s = sp.add_parser("obrazcy"); s.add_argument("dvizhok", nargs="?"); s.add_argument("--dizainy", default=DESIGNS)
     s = sp.add_parser("sdelat"); s.add_argument("dvizhok", nargs="?"); s.add_argument("--wide", action="store_true"); s.add_argument("--varianty", action="store_true")
     s = sp.add_parser("vyrezat"); s.add_argument("vhod"); s.add_argument("vyhod", nargs="?")
     s = sp.add_parser("kadry"); s.add_argument("video"); s.add_argument("-n", type=int, default=8)
