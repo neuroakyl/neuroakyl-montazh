@@ -27,3 +27,7 @@ __pycache__/
 инструменты/.litsa-bin
 *.litsa.json
 *.litsa.jpg
+
+# стиль обложек аккаунта — у каждого свой
+обложка-бренд.json
+инструменты/.vyrezat-bin
