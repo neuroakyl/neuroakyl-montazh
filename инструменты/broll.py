@@ -37,7 +37,7 @@ BAD = ("shutterstock", "storyblocks", "pond5", "envato", "istock", "getty", "pre
 def height(f):
     r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=height", "-of", "csv=p=0", str(f)],
                        capture_output=True, text=True).stdout.strip()
-    return int(r or 0)
+    return int(re.sub(r"\D", "", r.splitlines()[0]) or 0) if r else 0  # ffprobe бывает отдаёт «1080,»
 
 
 def yt_search(query, n, max_dur=1200):

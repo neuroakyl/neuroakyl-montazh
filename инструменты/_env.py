@@ -42,6 +42,10 @@ def lib():
 
 
 def ytdlp():
+    # YTDLP — свой yt-dlp, если в .venv старый (на Python 3.9 он не обновляется, YouTube отвечает «page needs to be reloaded»)
+    load_env()
+    if os.environ.get("YTDLP", "").strip():
+        return os.path.expanduser(os.environ["YTDLP"].strip())
     p = ROOT / ".venv" / "bin" / "yt-dlp"
     return str(p) if p.exists() else (shutil.which("yt-dlp") or "yt-dlp")
 
