@@ -11,6 +11,6 @@ const comp = await selectComposition({ serveUrl, id: process.env.COMP ?? "Reel" 
 for (const s of secs) {
   const frame = Math.min(comp.durationInFrames - 1, Math.round(Number(s) * comp.fps));
   const out = path.join(dir, `t${String(s).padStart(5, "0")}.jpg`);
-  await renderStill({ serveUrl, composition: comp, frame, output: out, imageFormat: "jpeg", jpegQuality: 88, onBrowserLog: (l) => l.type === "error" && console.log("[browser]", l.text) });
+  await renderStill({ serveUrl, composition: comp, frame, output: out, imageFormat: "jpeg", jpegQuality: 88, chromiumOptions: { gl: "angle" }, onBrowserLog: (l) => l.type === "error" && console.log("[browser]", l.text) });
   console.log(out);
 }
