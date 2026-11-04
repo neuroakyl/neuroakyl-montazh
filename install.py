@@ -66,6 +66,10 @@ npm = shutil.which("npm", path=env()["PATH"]) or "npm"
 r = run([npm, "install", "--no-audit", "--no-fund", "--loglevel=error"], cwd=ROOT / "шаблон", env=env())
 ok("Remotion") if r.returncode == 0 else bad("npm install в шаблон/ не прошёл")
 
+print("3б. Спутниковая карта (шаблон/public/karta — глобус и витрины)")
+r = run([BIN / f"python{EXE}", "-I", ROOT / "инструменты" / "karta.py", "demo", ROOT / "шаблон" / "public"], capture_output=True, text=True)
+ok("глобус и материалы карты") if r.returncode == 0 else bad("карта не скачалась (нужен интернет): python3 -I инструменты/karta.py demo шаблон/public")
+
 print("4. Библиотеки анимаций (внешнее/)" + (" — лёгкая версия" if LIGHT else " — целиком"))
 for line in (ROOT / "внешнее" / "ИСТОЧНИКИ.tsv").read_text(encoding="utf-8").splitlines():
     if not line.strip() or line.startswith("#"):

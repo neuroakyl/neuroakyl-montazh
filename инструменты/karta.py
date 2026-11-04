@@ -8,6 +8,8 @@
   python3 -I инструменты/karta.py kartinka "Flag of Kyrgyzstan.svg" <файл.png> [--shirina 1200]
         флаг, герб или фото с Wikimedia Commons (имя файла со страницы Commons); --poisk "слова" — найти имя
 
+  python3 -I инструменты/karta.py demo <движок>/public            → глобус + материалы витрин Karta/KartaAziya (ставит install.py)
+
 Спутник — Esri World Imagery (детально до улиц), подпись источника ставит сам компонент.
 """
 import json, os, subprocess, sys, time, urllib.parse, urllib.request
@@ -100,10 +102,27 @@ def kartinka(name, dst, shirina):
     print(f"готово {dst} · лицензия: {lic}")
 
 
+def demo(public):
+    # всё, без чего шаблон не соберётся (витрины Karta импортируют эти файлы); уже скачанное не трогает
+    k = os.path.join(public, "karta")
+    os.makedirs(k, exist_ok=True)
+    if not os.path.exists(os.path.join(k, "globus.jpg")):
+        globus(public)
+    for q, f, tol in (("Kyrgyzstan", "kg.json", 0.01), ("Talas Region", "talas.json", 0.003)):
+        if not os.path.exists(os.path.join(k, f)):
+            granica(q, os.path.join(k, f), tol)
+    for name, f, w in (("Flag of Kyrgyzstan.svg", "flag-kg.png", 1200), ("Flag of Talas Province Kyrgyzstan.svg", "flag-talas.png", 1200),
+                       ("Manas Ordo near Talas (cropped).jpg", "manas-ordo.jpg", 900)):
+        if not os.path.exists(os.path.join(k, f)):
+            kartinka(name, os.path.join(k, f), w)
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "globus":
         globus(sys.argv[2])
+    elif cmd == "demo":
+        demo(sys.argv[2])
     elif cmd == "granica":
         granica(sys.argv[2], sys.argv[3], float(arg("--tochnost", "0.003")))
     elif cmd == "tochka":
