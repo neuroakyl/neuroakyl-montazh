@@ -7,12 +7,12 @@
 //   <Karta keys={[{ t: 0, lon: 45, lat: 25, zoom: 2 }, { t: 3, lon: 74.6, lat: 41.4, zoom: 6.6, fly: true }]}>
 //     <Naklejka shape={kg} img={staticFile("karta/flag-kg.png")} ot={2.2} do={7} />
 //   </Karta>
-// zoom: 2–5 глобус (на 5–5,5 сам переходит в плоскую карту), 5–7 страна, 8–9 область, 11–13 город, 15–17 улицы. fly: true — полёт «отлёт → перелёт → подлёт».
+// zoom: 2–5 глобус (на 5–5,5 сам переходит в плоскую карту; globus={false} — сразу карта), 5–7 страна, 8–9 область, 11–13 город, 15–17 улицы. fly: true — полёт «отлёт → перелёт → подлёт».
 import React, { createContext, useContext, useLayoutEffect, useRef, useState } from "react";
 import { AbsoluteFill, Img, continueRender, delayRender, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 
 export type KCam = { lon: number; lat: number; zoom: number; bearing?: number; tilt?: number };
-export type KKey = KCam & { t: number; fly?: boolean };
+export type KKey = KCam & { t: number; fly?: boolean; ease?: "inOut" | "out" };
 export type Shape = number[][][]; // [[[lon, lat], …], …] — контуры (karta.py granica)
 
 const TILE = 256;
@@ -64,7 +64,9 @@ export function kamera(keys: KKey[], t: number): KCam {
   const a = keys[i], b = keys[i + 1];
   const raw = (t - a.t) / (b.t - a.t);
   const prevFly = i === 0 || a.fly, nextFly = i === n - 2 || keys[i + 2]?.fly;
-  const u = b.fly ? inOut(raw) : prevFly && nextFly ? sm(0, 1, raw) : prevFly ? 1 - (1 - raw) ** 2 : nextFly ? raw * raw : raw;
+  // первый полёт ролика стартует сразу на скорости (хук: первые секунды не тянем), остальные — разгон и торможение
+  const flyEase = (b.ease ?? (i === 0 ? "out" : "inOut")) === "out" ? 1 - (1 - raw) ** 3 : inOut(raw);
+  const u = b.fly ? flyEase : prevFly && nextFly ? sm(0, 1, raw) : prevFly ? 1 - (1 - raw) ** 2 : nextFly ? raw * raw : raw;
   const bearing = lerp(a.bearing ?? 0, b.bearing ?? 0, u), tilt = lerp(a.tilt ?? 0, b.tilt ?? 0, u);
   if (b.fly) {
     const f = flight(a, b, u);
@@ -79,9 +81,29 @@ export function kamera(keys: KKey[], t: number): KCam {
 const globeR = (cam: KCam) => (TILE * 2 ** cam.zoom) / (2 * PI) / Math.cos((cam.lat * PI) / 180);
 export const flatShare = (cam: KCam, w: number, h: number) => sm(2.0, 2.6, globeR(cam) / (Math.hypot(w, h) / 2));
 
-type Ctx = { cam: KCam; flat: number; w: number; h: number; t: number };
-const KartaCtx = createContext<Ctx>({ cam: { lon: 0, lat: 0, zoom: 3 }, flat: 1, w: 1080, h: 1920, t: 0 });
+// layer: "plane" — слой, лежащий на карте (наклонён вместе с ней: наклейки, области); "screen" — стоячий слой
+// (фото, подписи смотрят в камеру). Karta рендерит детей в оба слоя, каждая деталь рисуется только в своём.
+type Ctx = { cam: KCam; flat: number; w: number; h: number; t: number; layer: "plane" | "screen" };
+const KartaCtx = createContext<Ctx>({ cam: { lon: 0, lat: 0, zoom: 3 }, flat: 1, w: 1080, h: 1920, t: 0, layer: "plane" });
 export const useKarta = () => useContext(KartaCtx);
+
+// Наклон и поворот карты — та же математика, что CSS `perspective(P) rotateX(tilt) rotateZ(-bearing)` у слоя plane.
+const P = 1700;
+export const MAX_TILT = 50;
+function toScreen(cam: KCam, w: number, h: number, x: number, y: number) {
+  const a = ((cam.tilt ?? 0) * PI) / 180, ph = (-(cam.bearing ?? 0) * PI) / 180;
+  const dx = x - w / 2, dy = y - h / 2;
+  const x1 = dx * Math.cos(ph) - dy * Math.sin(ph), y1 = dx * Math.sin(ph) + dy * Math.cos(ph);
+  const s = P / (P - y1 * Math.sin(a));
+  return { x: w / 2 + x1 * s, y: h / 2 + y1 * Math.cos(a) * s, s };
+}
+function fromScreen(cam: KCam, X: number, Y: number) {
+  // экран (от центра) → плоскость карты (от центра)
+  const a = ((cam.tilt ?? 0) * PI) / 180, ph = (-(cam.bearing ?? 0) * PI) / 180;
+  const v = (Y * P) / (P * Math.cos(a) + Y * Math.sin(a));
+  const u = (X * (P - v * Math.sin(a))) / P;
+  return { x: u * Math.cos(ph) + v * Math.sin(ph), y: -u * Math.sin(ph) + v * Math.cos(ph) };
+}
 
 export function proj(c: Ctx, lon: number, lat: number) {
   const { cam, w, h, flat } = c;
@@ -95,16 +117,24 @@ export function proj(c: Ctx, lon: number, lat: number) {
   return { x: lerp(gx, fx, flat), y: lerp(gy, fy, flat), vis };
 }
 
+// точка карты → экран с учётом наклона (для стоячих деталей: фото, подписи)
+export function screenOf(c: Ctx, lon: number, lat: number) {
+  const p = proj(c, lon, lat);
+  const q = toScreen(c.cam, c.w, c.h, p.x, p.y);
+  return { x: q.x, y: q.y, vis: p.vis };
+}
+
 // ── плитки ─────────────────────────────────────────────────────────────────────
 const Plitki: React.FC<{ cam: KCam; level: number; opacity: number; w: number; h: number }> = ({ cam, level, opacity, w, h }) => {
   const n = 2 ** level, s = 2 ** (cam.zoom - level);
   const cx = mx(cam.lon) * n * TILE, cy = my(cam.lat) * n * TILE;
-  const m = 1 + (cam.tilt ?? 0) / 22;
-  const r = cam.bearing ? Math.hypot(w, h) / 2 : 0;
-  const hx = (r || w / 2) * m, hy = (r || h / 2) * m;
+  // какие плитки видны: углы кадра обратно на плоскость карты (при наклоне верх кадра видит дальше)
+  const pts = [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sy]) => fromScreen(cam, (sx * w) / 2 * 1.02, (sy * h) / 2 * 1.02));
+  const px0 = Math.min(...pts.map((p) => p.x)), px1 = Math.max(...pts.map((p) => p.x));
+  const py0 = Math.min(...pts.map((p) => p.y)), py1 = Math.max(...pts.map((p) => p.y));
   const tiles: React.ReactNode[] = [];
-  const y0 = Math.max(0, Math.floor((cy - hy / s) / TILE)), y1 = Math.min(n - 1, Math.floor((cy + hy / s) / TILE));
-  const x0 = Math.floor((cx - hx / s) / TILE), x1 = Math.floor((cx + hx / s) / TILE);
+  const y0 = Math.max(0, Math.floor((cy + py0 / s) / TILE)), y1 = Math.min(n - 1, Math.floor((cy + py1 / s) / TILE));
+  const x0 = Math.floor((cx + px0 / s) / TILE), x1 = Math.floor((cx + px1 / s) / TILE);
   for (let ty = y0; ty <= y1; ty++)
     for (let tx = x0; tx <= x1; tx++) {
       const wx = ((tx % n) + n) % n;
@@ -202,21 +232,25 @@ const Globus: React.FC<{ cam: KCam; w: number; h: number; grade: string }> = ({ 
 
 // ── карта целиком ──────────────────────────────────────────────────────────────
 // grade — цвет снимков: по умолчанию темнее и сочнее (как у референса), "" — как есть.
-export const Karta: React.FC<{ keys: KKey[]; children?: React.ReactNode; grade?: string; istochnik?: boolean; fon?: string }> = ({
+// globus={false} — без глобуса: ролик начинается сразу со спутниковой карты (Евразия, Средняя Азия — zoom 3,5–4,5).
+// Наклон камеры — tilt в ключах (20–35° — «под углом», как у референса; на глобусе наклон сам уходит в 0).
+export const Karta: React.FC<{ keys: KKey[]; children?: React.ReactNode; grade?: string; istochnik?: boolean; fon?: string; globus?: boolean }> = ({
   keys, children, grade = "contrast(1.12) saturate(1.22) brightness(0.86)", istochnik = true,
-  fon = "radial-gradient(ellipse 70% 50% at 50% 50%, #0d1a38 0%, #03060f 100%)",
+  fon = "radial-gradient(ellipse 70% 50% at 50% 50%, #0d1a38 0%, #03060f 100%)", globus = true,
 }) => {
   const frame = useCurrentFrame();
   const { fps, width: w, height: h } = useVideoConfig();
   const t = frame / fps;
-  const cam = kamera(keys, t);
-  const flat = flatShare(cam, w, h);
+  const raw = kamera(keys, t);
+  const flat = globus ? flatShare(raw, w, h) : 1;
+  const cam = { ...raw, tilt: Math.min(MAX_TILT, raw.tilt ?? 0) * flat, bearing: (raw.bearing ?? 0) * flat };
   const L = Math.min(18, Math.max(1, Math.floor(cam.zoom)));
   const fine = sm(0, 0.35, cam.zoom - L);
   const plane: React.CSSProperties = {
-    transform: `perspective(1700px) rotateX(${cam.tilt ?? 0}deg) rotateZ(${-(cam.bearing ?? 0)}deg)`,
+    transform: `perspective(${P}px) rotateX(${cam.tilt}deg) rotateZ(${-cam.bearing}deg)`,
     transformOrigin: "50% 50%",
   };
+  const ctx = { cam, flat, w, h, t };
   return (
     <AbsoluteFill style={{ background: fon, overflow: "hidden" }}>
       {flat < 1 && <Globus cam={cam} w={w} h={h} grade={grade} />}
@@ -226,8 +260,11 @@ export const Karta: React.FC<{ keys: KKey[]; children?: React.ReactNode; grade?:
           {fine > 0.01 && L < 18 && <Plitki cam={cam} level={L + 1} opacity={fine} w={w} h={h} />}
         </AbsoluteFill>
       )}
-      <KartaCtx.Provider value={{ cam, flat, w, h, t }}>
-        <AbsoluteFill style={flat > 0 ? plane : undefined}>{children}</AbsoluteFill>
+      <KartaCtx.Provider value={{ ...ctx, layer: "plane" }}>
+        <AbsoluteFill style={plane}>{children}</AbsoluteFill>
+      </KartaCtx.Provider>
+      <KartaCtx.Provider value={{ ...ctx, layer: "screen" }}>
+        <AbsoluteFill>{children}</AbsoluteFill>
       </KartaCtx.Provider>
       {istochnik && (
         <div style={{ position: "absolute", left: 24, bottom: 18, fontFamily: "sans-serif", fontSize: 17, fontStyle: "italic", color: "rgba(255,255,255,0.5)" }}>
@@ -261,44 +298,64 @@ const useUid = (p: string) => useState(() => `${p}${++uid}`)[0];
 
 // Наклейка места (приём референса): граница проявляется белым → заливка картинкой (флаг, герб, фото, орнамент)
 // сверху вниз → неоновая обводка рисуется по контуру → наклейка приподнимается (тень, лёгкий отскок) и чуть покачивается.
-// Без img — заливка цветом color. ot/do — секунды ролика.
-export const Naklejka: React.FC<{ shape: Shape; img?: string; color?: string; ot: number; do?: number; obvodka?: string; tolshina?: number }> = ({
-  shape, img, color = "#e8343a", ot, do: until, obvodka = "#d7ff3a", tolshina = 7,
-}) => {
+// Флаг полупрозрачный (prozrachnost — непрозрачность заливки, сквозь неё видна местность) и колышется тканью:
+// полосы картинки качаются волной, складки затенены (veter 0 — без ветра). Без img — заливка цветом color.
+export const Naklejka: React.FC<{
+  shape: Shape; img?: string; color?: string; ot: number; do?: number; obvodka?: string; tolshina?: number; prozrachnost?: number; veter?: number;
+}> = ({ shape, img, color = "#e8343a", ot, do: until, obvodka = "#d7ff3a", tolshina = 7, prozrachnost = 0.82, veter = 1 }) => {
   const c = useKarta();
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const id = useUid("nk");
   const t = c.t - ot;
-  if (t < 0 || (until !== undefined && c.t > until)) return null;
+  if (c.layer !== "plane" || t < 0 || (until !== undefined && c.t > until)) return null;
   const out = until !== undefined ? sm(until - 0.35, until, c.t) : 0;
-  const ghost = sm(0, 0.22, t) * 0.5 + sm(0.18, 0.4, t) * 0.5;
   const fill = sm(0.35, 0.8, t), line = sm(0.5, 1.05, t);
+  const ghost = (sm(0, 0.22, t) * 0.5 + sm(0.18, 0.4, t) * 0.5) * (1 - fill);
   const lift = spring({ frame: frame - Math.round((ot + 0.45) * fps), fps, config: { damping: 11, stiffness: 140 } });
   const b = bboxOf(c, shape);
   const sway = Math.sin((t - 1) * 1.4) * 0.7 * sm(1, 1.6, t);
   const sc = (1 + 0.035 * lift) * (1 - 0.1 * out);
   const paths = shape.map((r) => pathOf(c, r));
+  // ткань: N вертикальных полос, волна бежит от древка (слева) к краю, амплитуда растёт к краю
+  const N = 40, sw = b.w / N, pad = b.h * 0.08;
+  const strips = Array.from({ length: N }, (_, i) => {
+    const k = (i + 0.5) / N;
+    const ph = k * 2 * PI * 1.25 - c.t * 3.4;
+    return { i, dy: Math.sin(ph) * b.h * 0.035 * veter * (0.35 + 0.65 * k), shade: Math.cos(ph) * veter * (0.4 + 0.6 * k) };
+  });
+  const filling = img ? (
+    strips.map(({ i, dy }) => (
+      <svg key={i} x={b.x + i * sw} y={b.y - pad} width={sw + 1} height={b.h + 2 * pad} overflow="hidden">
+        <image href={img} x={-i * sw} y={pad + dy - pad} width={b.w} height={b.h + 2 * pad} preserveAspectRatio="xMidYMid slice" />
+      </svg>
+    ))
+  ) : (
+    <rect x={b.x - 4} y={b.y - 4} width={b.w + 8} height={b.h + 8} fill={color} />
+  );
   return (
     <svg width={c.w} height={c.h} style={{ position: "absolute", inset: 0, overflow: "visible", opacity: 1 - out }}>
       <defs>
         <clipPath id={`${id}c`}>{paths.map((d, i) => <path key={i} d={d} />)}</clipPath>
-        <clipPath id={`${id}w`}><rect x={b.x - 4} y={b.y - 4} width={b.w + 8} height={(b.h + 8) * fill} /></clipPath>
+        <clipPath id={`${id}w`}><rect x={b.x - 4} y={b.y - pad - 4} width={b.w + 8} height={(b.h + 2 * pad + 8) * fill} /></clipPath>
         <filter id={`${id}s`} x="-30%" y="-30%" width="160%" height="160%">
           <feDropShadow dx={5 * lift} dy={11 * lift} stdDeviation={5} floodColor="#000" floodOpacity={0.6 * cl(lift)} />
         </filter>
         <filter id={`${id}g`} x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation={6} /></filter>
+        {/* складки ткани: свет на гребнях волны, тень во впадинах — одним градиентом, без швов между полосами */}
+        <linearGradient id={`${id}f`} gradientUnits="userSpaceOnUse" x1={b.x} y1={0} x2={b.x + b.w} y2={0}>
+          {strips.map(({ i, shade }) => (
+            <stop key={i} offset={(i + 0.5) / N} stopColor={shade > 0 ? "#fff" : "#000"} stopOpacity={Math.abs(shade) * 0.26} />
+          ))}
+        </linearGradient>
       </defs>
       <g transform={`translate(${b.cx} ${b.cy}) rotate(${sway}) scale(${sc}) translate(${-b.cx} ${-b.cy})`}>
         <g filter={`url(#${id}s)`}>
           <g clipPath={`url(#${id}c)`}>
             <rect x={b.x - 4} y={b.y - 4} width={b.w + 8} height={b.h + 8} fill="#fff" opacity={ghost} />
-            <g clipPath={`url(#${id}w)`}>
-              {img ? (
-                <image href={img} x={b.x} y={b.y} width={b.w} height={b.h} preserveAspectRatio="xMidYMid slice" />
-              ) : (
-                <rect x={b.x - 4} y={b.y - 4} width={b.w + 8} height={b.h + 8} fill={color} />
-              )}
+            <g clipPath={`url(#${id}w)`} opacity={prozrachnost}>
+              {filling}
+              {img && veter > 0 && <rect x={b.x} y={b.y - pad} width={b.w} height={b.h + 2 * pad} fill={`url(#${id}f)`} />}
             </g>
           </g>
           {paths.map((d, i) => (
@@ -320,7 +377,7 @@ export const Oblast: React.FC<{ shape: Shape; ot: number; do?: number; color?: s
 }) => {
   const c = useKarta();
   const t = c.t - ot;
-  if (t < 0 || (until !== undefined && c.t > until)) return null;
+  if (c.layer !== "plane" || t < 0 || (until !== undefined && c.t > until)) return null;
   const vis = sm(0, 0.5, t) * (until !== undefined ? 1 - sm(until - 0.5, until, c.t) : 1);
   const line = sm(0.1, 0.9, t);
   const paths = shape.map((r) => pathOf(c, r));
@@ -359,8 +416,8 @@ export const Foto: React.FC<{ lon: number; lat: number; src: string; ot: number;
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const t = c.t - ot;
-  if (t < 0 || (until !== undefined && c.t > until)) return null;
-  const p = proj(c, lon, lat);
+  if (c.layer !== "screen" || t < 0 || (until !== undefined && c.t > until)) return null;
+  const p = screenOf(c, lon, lat);
   const dot = spring({ frame: frame - Math.round(ot * fps), fps, config: { damping: 12 } });
   const pop = spring({ frame: frame - Math.round((ot + 0.18) * fps), fps, config: { damping: 10, stiffness: 150 } });
   const out = until !== undefined ? sm(until - 0.3, until, c.t) : 0;
@@ -396,8 +453,8 @@ export const Metka: React.FC<{ lon: number; lat: number; text: string; ot: numbe
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const t = c.t - ot;
-  if (t < 0 || (until !== undefined && c.t > until)) return null;
-  const p = proj(c, lon, lat);
+  if (c.layer !== "screen" || t < 0 || (until !== undefined && c.t > until)) return null;
+  const p = screenOf(c, lon, lat);
   if (!p.vis) return null;
   const s = spring({ frame: frame - Math.round(ot * fps), fps, config: { damping: 13 } });
   const out = until !== undefined ? sm(until - 0.3, until, c.t) : 0;
