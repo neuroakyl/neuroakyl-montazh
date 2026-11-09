@@ -1,4 +1,5 @@
-import { Easing, interpolate } from "remotion";
+import { Easing, getStaticFiles, interpolate } from "remotion";
+import { CTA } from "./settings";
 import WORDS from "./words.json";
 
 // Тайминги слов голоса: [{ text, start, end }] в секундах (голос — инструменты/golos.py, или MMS — words.py)
@@ -8,8 +9,18 @@ export const words = WORDS as Word[];
 export const FPS = 30;
 export const W = 1080;
 export const H = 1920;
-// длина ролика: последнее слово + хвост 0,9 с
-export const DURATION = Math.max(3, (words.at(-1)?.end ?? 2) + 0.9);
+// тело ролика: последнее слово + хвост 0,9 с; с готовой концовкой (settings.ts CTA) — + 0,35 с и концовка
+export const BODY_END = (words.at(-1)?.end ?? 2) + (CTA ? 0.35 : 0.9);
+export const DURATION = Math.max(3, BODY_END + (CTA?.len ?? 0));
+
+/** есть ли файл в public/ (например "sfx/whoosh1.wav"): нет — деталь или звук пропускаются, рендер не падает */
+export const has = (f: string) => {
+  try {
+    return getStaticFiles().some((s) => s.name === f);
+  } catch {
+    return false;
+  }
+};
 
 // Палитра ролика — меняется под стиль (это ручка, а не стиль)
 export const C = {

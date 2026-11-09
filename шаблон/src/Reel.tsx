@@ -1,21 +1,25 @@
 import React from "react";
 import { AbsoluteFill, useCurrentFrame } from "remotion";
 import { useFonts } from "./fonts";
-import { FPS, at } from "./lib";
+import { BODY_END, FPS, at } from "./lib";
 import { CalendarChaos } from "./kit/cards";
 import { MindMap, TableFill } from "./kit/schemes";
 import { BigSmear, StackLines, StepSlate, TitleRows } from "./kit/text";
+import { Ending } from "./kit/cta";
+import { Grain } from "./kit/live";
+import { Shots, type Shot } from "./kit/shots";
+import { CTA } from "./settings";
 import { Sound } from "./sound";
 import { Bg, Handle, Swap, capStyle } from "./ui";
 
-// Ролик = список сцен. Сцена = функция от времени t (секунды); сцены сменяются жёсткой склейкой на слове.
+// Ролик = список кадров (kit/shots.tsx). Кадр = функция от времени t (секунды) + переход: "cut" жёсткая склейка,
+// "l"/"r"/"u"/"d" переезд, "z" нырок-зум. Три вида вперемешку, кадр 1,5–3 с (SKILL.md «живо и объёмно»).
 // Детали (kit/*) берутся по смыслу фразы — каталог «когда брать» в приёмы.md, раздел «Детали шаблона».
 // Это демо на черновых таймингах (demo_words.py): под свой ролик сцены пишутся заново.
-type Scene = [from: number, render: (t: number) => React.ReactNode];
 const cut = (a: string) => at(a) - 0.04;
 const cap = (s: string, a: string): [number, React.ReactNode] => [at(a), <div style={capStyle(56)}>{s}</div>];
 
-const scenes = (): Scene[] => [
+const raw = (): [number, (t: number) => React.ReactNode][] => [
   // хук: заголовок по словам + календарь из хаоса
   [
     0,
@@ -89,22 +93,21 @@ const scenes = (): Scene[] => [
   [cut("напиши"), (t) => (<><Bg kind="red" /><Swap t={t} y={850} until={99} items={[[at("напиши"), <div style={capStyle(46)}>напиши</div>]]} /><BigSmear t={t} a={at("старт")} text="СТАРТ" /></>)],
 ];
 
+// переходы демо: жёсткая склейка, переезд, нырок — вперемешку
+const TR: Shot["tr"][] = ["cut", "z", "l", "cut", "u", "z"];
+const scenes = (): Shot[] => raw().map(([a, r], i) => ({ a, r, tr: TR[i % TR.length] }));
+
 export const Reel: React.FC = () => {
   const ready = useFonts();
   const t = useCurrentFrame() / FPS;
   const list = scenes();
-  let cur = 0;
-  list.forEach(([from], i) => {
-    if (t >= from) cur = i;
-  });
   return (
     <AbsoluteFill style={{ background: "#000" }}>
-      {ready && (
-        // лёгкий дрейф камеры: кадр всё время чуть приближается
-        <AbsoluteFill style={{ transform: `scale(${1 + Math.min(0.03, (t - list[cur][0]) * 0.008)})` }}>{list[cur][1](t)}</AbsoluteFill>
-      )}
+      {ready && t < BODY_END && <Shots t={t} list={list} hits={[at("старт")]} />}
+      {CTA && t >= BODY_END && <Ending t={t} start={BODY_END} cfg={CTA} />}
+      <Grain t={t} />
       <Handle />
-      <Sound />
+      <Sound shots={list} />
     </AbsoluteFill>
   );
 };
