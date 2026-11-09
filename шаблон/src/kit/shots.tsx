@@ -1,29 +1,31 @@
 import React from "react";
 import { AbsoluteFill } from "remotion";
-import { H, W, k, lerp, sharp } from "../lib";
+import { has } from "../lib";
+import { P } from "./vary/recept";
+import { PEREHODY, PakOver, trDef } from "./vary/perehody";
 
 /**
- * Ролик = список кадров с переходами. Проверено в роликах 08.11.2026 («Механика», «Тест — алтын»): кадр 1,5–3 с,
- * на 60 с — 20+ кадров, три вида переходов вперемешку (правило в SKILL.md «Понятно — мало, нужно ещё живо и объёмно»).
+ * Ролик = список кадров с переходами. Кадр 1,5–3 с, на 60 с — 20+ кадров (SKILL.md «живо и объёмно»).
  *
- *   tr: "cut" — жёсткая склейка на слове;  "l" | "r" | "u" | "d" — переезд: старый кадр уезжает, новый въезжает
- *       с той стороны;  "z" — нырок-зум: старый кадр улетает в камеру, потом новый приезжает из глубины (без
- *       полупрозрачного наложения — оно и есть «дешёвый» переход).
+ *   tr — переход В этот кадр, любой из банка kit/vary/perehody.tsx (21 вид: cut, slide-l/r/u/d, dive, pull, whip, flash,
+ *        glitch, iris, wipe, shutter, spin, squash, pixel, doors, blur, stretch, card, pak). Старые имена l r u d z тоже работают.
+ *        Не указан — берётся из рецепта ролика по кругу (recept.json → pick.perehody): так каждый ролик со своим набором.
  *   hits — секунды ударов (главные слова): весь кадр коротко толкается на 4–5 %.
- *   subY — где субтитры на этом кадре (чтобы не лезли на главное).
+ *   subY — где субтитры на этом кадре.
  *
- *   const list: Shot[] = [{ a: 0, r: S1 }, { a: cut("слово"), r: S2, tr: "z" }, ...];
- *   <Shots t={t} list={list} hits={[at("главное")]} bg="#05070D" />
- *   <Sound shots={list} />   — на каждый переезд свуш, на склейку тихий клик (sound.tsx)
+ *   <Shots t={t} list={list} hits={[at("главное")]} />    <Sound shots={resolveShots(list)} />
  */
-export type Tr = "cut" | "l" | "r" | "u" | "d" | "z";
+export type Tr = string;
 export type Shot = { a: number; r: (t: number) => React.ReactNode; tr?: Tr; subY?: number };
 
-const TR = 0.28; // переезд, с
-const TZ = 0.24; // нырок, с
-const OFF = { l: [-1, 0], r: [1, 0], u: [0, -1], d: [0, 1] } as const;
+/** переход каждого кадра с учётом рецепта (для звука и проверки) */
+export const resolveShots = <S extends { a: number; tr?: string }>(list: S[]): (S & { tr: string })[] =>
+  list.map((s, i) => {
+    let tr = s.tr ?? (i === 0 ? "cut" : P.perehody[(i - 1) % Math.max(1, P.perehody.length)] ?? "cut");
+    if (tr === "pak" && !(P.pak?.perehod && has(P.pak.perehod))) tr = "flash";
+    return { ...s, tr };
+  });
 
-/** номер текущего кадра */
 export const shotAt = (list: { a: number }[], t: number) => {
   let cur = 0;
   list.forEach((s, i) => {
@@ -41,50 +43,41 @@ export const punchAt = (t: number, hits: number[], amp = 0.045) => {
   return p;
 };
 
-/** drift — медленный наезд внутри кадра (доля в секунду, до 3 %): кадр не стоит, даже если в нём ничего не движется */
+/** drift — медленный наезд внутри кадра (доля в секунду, до 3 %): кадр не стоит */
 export const Shots: React.FC<{ t: number; list: Shot[]; hits?: number[]; bg?: string; amp?: number; drift?: number }> = ({ t, list, hits = [], bg = "#000", amp, drift = 0.008 }) => {
-  const cur = shotAt(list, t);
-  const render = (i: number, phase: "in" | "out" | "hold") => {
-    const s = list[i];
-    const nxt = list[i + 1];
-    let tf = "";
-    if (phase === "in") {
-      const tr = s.tr ?? "cut";
-      if (tr === "z") {
-        if (t < s.a + TZ / 2) return null;
-        tf = `scale(${lerp(0.72, 1, k(t, s.a + TZ / 2, TZ / 2 + 0.15, sharp))})`;
-      } else if (tr !== "cut") {
-        const [dx, dy] = OFF[tr];
-        const u = k(t, s.a, TR, sharp);
-        tf = `translate(${-dx * W * (1 - u)}px, ${-dy * H * (1 - u)}px)`;
-      }
-    }
-    if (phase === "out" && nxt) {
-      const tr = nxt.tr ?? "cut";
-      if (tr === "z") {
-        if (t >= nxt.a + TZ / 2) return null;
-        const u = Math.min(1, (t - nxt.a) / (TZ / 2));
-        tf = `scale(${lerp(1, 1.9, u * u)})`;
-      } else if (tr !== "cut") {
-        const [dx, dy] = OFF[tr];
-        const u = k(t, nxt.a, TR, sharp);
-        tf = `translate(${dx * W * u}px, ${dy * H * u}px)`;
-      }
-    }
+  const all = resolveShots(list);
+  const cur = shotAt(all, t);
+  const frame = (i: number, st: React.CSSProperties = {}, key = String(i)) => {
+    const s = all[i];
     const z = 1 + Math.min(0.03, Math.max(0, t - s.a) * drift);
     return (
-      <AbsoluteFill key={i} style={{ transform: tf, overflow: "hidden", background: bg }}>
+      <AbsoluteFill key={key} style={{ overflow: "hidden", background: bg, ...st }}>
         <AbsoluteFill style={{ transform: `scale(${z})` }}>{s.r(t)}</AbsoluteFill>
       </AbsoluteFill>
     );
   };
-  const trNow = list[cur].tr ?? "cut";
-  const inTr = cur > 0 && trNow !== "cut" && t < list[cur].a + (trNow === "z" ? TZ : TR);
+  const def = trDef(all[cur].tr);
+  const s = t - all[cur].a;
+  const inTr = cur > 0 && s < def.d;
+  let layers: React.ReactNode[] = [frame(cur)];
+  if (inTr) {
+    const o = def.old ? def.old(s) : {};
+    const n = def.neu ? def.neu(s) : {};
+    const n2 = def.neu2 ? def.neu2(s) : undefined;
+    const oldL = o === null ? null : frame(cur - 1, o, "old");
+    const neuL = n === null ? null : frame(cur, n, "neu");
+    const neuL2 = n2 ? frame(cur, n2, "neu2") : null;
+    layers = def.oldOnTop ? [neuL, neuL2, oldL] : [oldL, neuL, neuL2];
+    if (def.over) layers.push(<React.Fragment key="over">{def.over(s)}</React.Fragment>);
+  }
+  // переходы из пака: файл играет поверх шва, звучит и виден чуть до и после склейки
+  const pakOver = all.map((x, i) => (i > 0 && x.tr === "pak" && P.pak?.perehod ? <PakOver key={`pak${i}`} a={x.a} file={P.pak.perehod} blend={P.pak.perehodBlend ?? "screen"} /> : null));
   return (
     <AbsoluteFill style={{ background: bg, transform: `scale(${punchAt(t, hits, amp)})` }}>
-      {inTr && trNow !== "z" && render(cur - 1, "out")}
-      {render(cur, inTr ? "in" : "hold")}
-      {inTr && trNow === "z" && render(cur - 1, "out")}
+      {layers}
+      {pakOver}
     </AbsoluteFill>
   );
 };
+
+export { PEREHODY };

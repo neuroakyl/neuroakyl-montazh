@@ -2,7 +2,8 @@
 # Не даёт закоммитить ключи, токены, личные файлы и тяжёлое. Включается install.sh (git config core.hooksPath .githooks).
 # Своё личное слово (ник, имя клиента) добавь в .githooks/stop-words.local — по строке на слово, файл в Git не идёт.
 fail=0
-files=$(git diff --cached --name-only --diff-filter=ACM)
+# core.quotepath=off: иначе файлы с русскими именами приходят в кавычках с \\-кодами и проверка их пропускает
+files=$(git -c core.quotepath=off diff --cached --name-only --diff-filter=ACM)
 [ -z "$files" ] && exit 0
 
 # 1. Запрещённые файлы
@@ -24,7 +25,8 @@ extra=""
 while IFS= read -r f; do
   [ -f "$f" ] || continue
   case "$f" in *.ttf|*.otf|*.png|*.jpg|*.jpeg|*.webp) continue ;; esac
-  if git show ":$f" | grep -nE "$pat" >/dev/null; then echo "✗ похоже на ключ/токен: $f"; git show ":$f" | grep -nE "$pat" | cut -c1-80; fail=1; fi
+  # пак/пак.json — список ссылок на источники: слаги Lottie похожи на ключ sk-…, ключи там не ищем (личные пути — ищем)
+  if [ "$f" != "пак/пак.json" ] && git show ":$f" | grep -nE "$pat" >/dev/null; then echo "✗ похоже на ключ/токен: $f"; git show ":$f" | grep -nE "$pat" | cut -c1-80; fail=1; fi
   if git show ":$f" | grep -nE "$pat2" | grep -v 'pre-commit' >/dev/null; then echo "✗ личный путь: $f"; git show ":$f" | grep -nE "$pat2" | cut -c1-100; fail=1; fi
   if [ -n "$extra" ] && git show ":$f" | grep -niE "$extra" >/dev/null; then echo "✗ личное слово из stop-words.local: $f"; fail=1; fi
 done <<< "$files"

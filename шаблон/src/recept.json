@@ -1,0 +1,6 @@
+{
+  "name": "пример — перезаписывает инструменты/recept.py",
+  "seed": 1,
+  "brand": { "accent": "#FFD400", "dark": "#0B0B0C", "light": "#FFFFFF", "head": "head", "text": "ui" },
+  "pick": { "perehody": ["cut", "dive", "slide-l"], "tekst": "blur", "subs": "karaoke", "fon": "gradient", "akcent": "ellipse", "kamera": "drift", "ton": "energichno" }
+}

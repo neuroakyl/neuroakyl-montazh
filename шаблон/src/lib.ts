@@ -22,18 +22,34 @@ export const has = (f: string) => {
   }
 };
 
-// Палитра ролика — меняется под стиль (это ручка, а не стиль)
+// Палитра ролика — из бренда автора (recept.json → brand, пишет инструменты/recept.py из обложка-бренд.json).
+// «red» — исторически главный цвет плашек и миров; у светлого акцента (лайм, жёлтый) берётся его тёмный вариант, чтобы текст читался.
+import RECEPT from "./recept.json";
+const BR = (RECEPT as { brand?: { accent?: string; dark?: string; light?: string } }).brand ?? {};
+const rgb = (h: string) => {
+  const x = h.replace("#", "");
+  const n = parseInt(x.length === 3 ? x.split("").map((c) => c + c).join("") : x.slice(0, 6), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+const shade = (h: string, m: number) => "#" + rgb(h).map((v) => Math.round(Math.min(255, v * m)).toString(16).padStart(2, "0")).join("");
+const luma = (h: string) => {
+  const [r, g, b] = rgb(h);
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+};
+const ACC = BR.accent ?? "#9E0A10";
+const MAIN = luma(ACC) > 0.55 ? shade(ACC, 0.42) : ACC;
 export const C = {
-  red: "#9E0A10",
-  redEdge: "#760001",
-  redDeep: "#5C0006",
-  plaqueRed: "#6E0008",
-  black: "#211F22",
+  red: MAIN,
+  redEdge: shade(MAIN, 0.75),
+  redDeep: shade(MAIN, 0.58),
+  plaqueRed: shade(MAIN, 0.7),
+  black: BR.dark ? shade(BR.dark, 1) : "#211F22",
   blackEdge: "#040305",
   pink: "#FFEDEF",
-  white: "#FFFFFF",
+  white: BR.light ?? "#FFFFFF",
   ink: "#111111",
   grey: "#8A8A8A",
+  accent: ACC,
 };
 
 export const F = {

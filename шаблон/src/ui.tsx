@@ -1,6 +1,7 @@
+import { P } from "./kit/vary/recept";
 import React from "react";
 import { AbsoluteFill, interpolate } from "remotion";
-import { C, F, H, HANDLE, W, clamp, k, lerp, sharp } from "./lib";
+import { C, F, H, HANDLE, W, back, clamp, k, lerp, sharp } from "./lib";
 
 // ── Фоны: три мира референса (винный / чёрный / молочный) ─────────────────────
 export const Bg: React.FC<{ kind: "red" | "black" | "pink" }> = ({ kind }) => {
@@ -23,10 +24,40 @@ export const Handle: React.FC = () =>
     </div>
   ) : null;
 
-// ── Появление «размытый зум» (блюр + лёгкий скейл), 0,14 с ─────────────────────
-export function blurIn(t: number, a: number, d = 0.14, from = 1.07) {
+// ── Появление элемента. Вид — из рецепта ролика (recept.json → pick.tekst), поэтому все детали kit, которые
+// появляются через blurIn (заголовки по строкам, шаги, стопки, Swap, карточки, схемы), в разных роликах входят по-разному.
+// kind — свой вид для места. «blur» — исходный «размытый зум» 0,14 с.
+export function blurIn(t: number, a: number, d = 0.14, from = 1.07, kind: string = P.tekst): React.CSSProperties {
   const u = k(t, a, d, sharp);
-  return { opacity: Math.min(1, u * 2.2), filter: `blur(${lerp(14, 0, u)}px)`, transform: `scale(${lerp(from, 1, u)})` };
+  const o = Math.min(1, u * 2.2);
+  switch (kind) {
+    case "pop":
+      return { opacity: o, transform: `scale(${k(t, a, d + 0.12, back)})` };
+    case "rise":
+    case "wave":
+    case "underline":
+    case "box":
+      return { opacity: o, transform: `translateY(${lerp(60, 0, k(t, a, d + 0.08, kind === "wave" ? back : sharp))}px)` };
+    case "slide":
+      return { opacity: o, transform: `translateX(${lerp(-220, 0, k(t, a, d + 0.1, sharp))}px)` };
+    case "flip":
+      return { opacity: t >= a ? 1 : 0, transform: `perspective(800px) rotateX(${lerp(-90, 0, k(t, a, d + 0.16, back))}deg)` };
+    case "drop":
+      return { opacity: o, transform: `scale(${lerp(2.1, 1, k(t, a, d + 0.1, sharp))})` };
+    case "stamp":
+      return { opacity: o, transform: `rotate(${lerp(-14, 0, k(t, a, d + 0.14, back))}deg) scale(${lerp(1.7, 1, k(t, a, d + 0.14, back))})` };
+    case "glitch": {
+      const g = 1 - k(t, a, 0.28);
+      return { opacity: t >= a ? 1 : 0, transform: `translateX(${Math.sin(t * 90) * 14 * g}px)`, textShadow: `${10 * g}px 0 0 rgba(255,0,60,0.8), ${-10 * g}px 0 0 rgba(0,255,255,0.8)` };
+    }
+    case "type":
+    case "letters":
+    case "split":
+      // проявление слева направо шторкой
+      return { opacity: t >= a ? 1 : 0, clipPath: `inset(-20% ${lerp(100, 0, k(t, a, d + 0.2, sharp))}% -20% 0)` };
+    default:
+      return { opacity: o, filter: `blur(${lerp(14, 0, u)}px)`, transform: `scale(${lerp(from, 1, u)})` };
+  }
 }
 
 export const headStyle = (size: number, color = C.white): React.CSSProperties => ({

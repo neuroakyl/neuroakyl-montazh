@@ -2,6 +2,7 @@
 
   python3 install.py            библиотеки анимаций целиком (~0,5 ГБ)
   python3 install.py --light    только проверенные нужные файлы (~90 МБ)
+  python3 install.py --full     то же, но пак монтажёра целиком (~2,3 ГБ + зелёные экраны yt), а не отборный (~350 МБ)
 
 Всё ставится внутрь папки движка, в .venv/: Python-пакеты (yt-dlp, fonttools), ffmpeg (static-ffmpeg),
 Node.js (nodeenv), пакеты Remotion в шаблон/. Повторный запуск безопасен: доставляет недостающее, ничего не удаляет.
@@ -14,6 +15,7 @@ VENV = ROOT / ".venv"
 BIN = VENV / ("Scripts" if WIN else "bin")
 EXE = ".exe" if WIN else ""
 LIGHT = "--light" in sys.argv
+FULL = "--full" in sys.argv
 fails = []
 
 
@@ -96,6 +98,11 @@ for line in (ROOT / "внешнее" / "ИСТОЧНИКИ.tsv").read_text(encod
         ok(f"{d} @ {commit[:7]}")
     else:
         bad(f"{d}: не скачался {url}")
+
+print("4б. Пак монтажёра (звуки, засветки, переходы, элементы, текстуры, Lottie, шрифты)" + (" — полный" if FULL else " — отборный, ~350 МБ"))
+print("    файлы качаются с оригинальных источников (Freesound, Kenney, Pixabay, LottieFiles, Google Fonts…), 5–30 минут")
+r = run([BIN / f"python{EXE}", "-I", ROOT / "инструменты" / "pak.py", "install", "--all" if FULL else "--light"], env=env())
+ok("пак: внешнее/пак/ (каталог.json, АВТОРЫ.md)") if r.returncode == 0 else bad("пак не поставился: повтори `python3 инструменты/pak.py install --light` (докачает с места)")
 
 print("5. Личные настройки")
 for src, dst in (("local.example.md", "local.md"), (".env.example", ".env")):
