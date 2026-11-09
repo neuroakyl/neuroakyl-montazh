@@ -78,7 +78,15 @@ def pak_items():
         c = json.loads((d / "каталог.json").read_text(encoding="utf-8"))
     except Exception:
         return []
-    return [i for i in (c if isinstance(c, list) else list(c.values())) if (d / i.get("local", "")).exists()]
+    out = []
+    for i in (c if isinstance(c, list) else list(c.values())):
+        # два вида каталога: пак install.py (local, dur, id, set) и сборный пак автора (path, dur_s) — приводим к одному
+        loc = i.get("local") or i.get("path")
+        if not loc or not (d / loc).exists():
+            continue
+        out.append({**i, "local": loc, "dur": i.get("dur", i.get("dur_s")), "id": i.get("id") or loc,
+                    "set": i.get("set") or i.get("category", "").split("/")[0], "title": i.get("title") or pathlib.Path(loc).name})
+    return out
 
 
 VIDEO = (".webm", ".mp4", ".mov")

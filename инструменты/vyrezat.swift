@@ -1,13 +1,16 @@
 // Вырезать главный предмет или человека с картинки (macOS 14+, Vision «поднять объект», как в Фото). Запускать через oblozhka.py.
 //   swiftc -O vyrezat.swift -o vyrezat
 //   ./vyrezat ВХОД.jpg ВЫХОД.png      — PNG с прозрачным фоном, обрезан по предмету
+//   ./vyrezat --full ВХОД.jpg ВЫХОД.png — то же, но размер исходника (слой ложится ровно на фото: параллакс 2.5D)
 //   ./vyrezat --face КАРТИНКА.png     — самое крупное лицо: {"w":..,"h":..,"face":[x,y,w,h]} (доли, начало сверху слева) или "face":null
 // Выход в консоль: {"w":..,"h":..,"n":<сколько объектов нашлось>}
 import AppKit
 import CoreImage
 import Vision
 
-let args = CommandLine.arguments
+var args = CommandLine.arguments
+let full = args.contains("--full")
+args.removeAll { $0 == "--full" }
 guard args.count >= 3 else { print("usage: vyrezat IN OUT.png | --face IMG"); exit(1) }
 if args[1] == "--face" {
     guard let img = CIImage(contentsOf: URL(fileURLWithPath: args[2])) else { print("{\"error\":\"не открылась картинка\"}"); exit(2) }
@@ -27,7 +30,7 @@ let req = VNGenerateForegroundInstanceMaskRequest()
 do { try handler.perform([req]) } catch { print("{\"error\":\"\(error.localizedDescription)\"}"); exit(3) }
 guard let res = req.results?.first, !res.allInstances.isEmpty else { print("{\"error\":\"предмет не найден\"}"); exit(4) }
 // все найденные объекты вместе, обрезка по их рамке
-let buf = try res.generateMaskedImage(ofInstances: res.allInstances, from: handler, croppedToInstancesExtent: true)
+let buf = try res.generateMaskedImage(ofInstances: res.allInstances, from: handler, croppedToInstancesExtent: !full)
 let out = CIImage(cvPixelBuffer: buf)
 let ctx = CIContext()
 guard let cg = ctx.createCGImage(out, from: out.extent) else { exit(5) }
