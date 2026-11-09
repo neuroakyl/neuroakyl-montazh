@@ -6,13 +6,21 @@
       точный отрезок из конкретного ролика
   python3 -I broll.py pin "empty plate" OUT_DIR [-n 4]
       ищет пины-видео через DuckDuckGo и качает их целиком (они короткие)
+  python3 -I broll.py pix "factory conveyor" OUT_DIR [-n 6] [--min-w 1920] [--orient horizontal|vertical|all] [--photo]
+      Pixabay API (ключ PIXABAY_KEY в .env): видео large/medium целиком, --photo — фото largeImageURL. -n максимум 20
+  python3 -I broll.py mix "factory" OUT_DIR [-n 6]
+      Mixkit без ключа: со страницы поиска берёт ролики, качает 1080 (если нет — 720)
+  python3 -I broll.py all "запрос" OUT_DIR [-n 4]
+      pix + mix + yt с одним запросом и сразу лист превью
   python3 -I broll.py sheet OUT_DIR
       лист превью: по 3 кадра с каждого клипа, строка N = N-й файл из списка
 
 YouTube часто требует куки (бот-блок): путь к экспорту cookies.txt — YT_COOKIES в .env (необязательно).
+Лицензии: Pixabay и Mixkit — бесплатная лицензия, указание автора необязательно, но автор (user) сохраняется в sources.json.
+Pixabay API: до 100 запросов в минуту, массовых выкачек не делать (-n по умолчанию 6, максимум 20).
 Каждый скачанный клип пишется в OUT_DIR/sources.json: откуда, какой отрезок.
 """
-import argparse, json, pathlib, re, subprocess, sys, urllib.parse, urllib.request
+import argparse, json, pathlib, re, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
 
 import sys; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent)); import _env
 YTDLP = _env.ytdlp()
@@ -104,6 +112,92 @@ def duration(f):
     return float(r or 0)
 
 
+def _get(url, retry=True):
+    """GET с UA; при 429 ждёт минуту и повторяет один раз."""
+    try:
+        return urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=60).read()
+    except urllib.error.HTTPError as e:
+        if e.code == 429 and retry:
+            print("  429: жду 65 с", file=sys.stderr)
+            time.sleep(65)
+            return _get(url, False)
+        raise
+
+
+def _download(url, out):
+    out = pathlib.Path(out)
+    tmp = out.with_suffix(out.suffix + ".part")
+    tmp.write_bytes(_get(url))
+    tmp.rename(out)
+
+
+def pix(query, out_dir, n, min_w, orient, photo):
+    n = max(1, min(n, 20))
+    key = _env.key("PIXABAY_KEY")
+    q = urllib.parse.quote_plus(query[:100])
+    if photo:
+        url = f"https://pixabay.com/api/?key={key}&q={q}&image_type=photo&safesearch=true&per_page={min(max(n * 3, 10), 50)}"
+    else:
+        url = f"https://pixabay.com/api/videos/?key={key}&q={q}&safesearch=true&per_page={min(max(n * 3, 10), 50)}"
+    hits = json.loads(_get(url)).get("hits", [])
+    got = 0
+    for h in hits:
+        if got >= n:
+            break
+        if photo:
+            w, hh, link, ext = h.get("imageWidth", 0), h.get("imageHeight", 0), h.get("largeImageURL"), "jpg"
+            dur = None
+        else:
+            v = h.get("videos", {})
+            c = next((v[k] for k in ("large", "medium") if v.get(k, {}).get("url") and v[k].get("width", 0) >= min_w), None)
+            if not c:
+                continue
+            w, hh, link, ext, dur = c["width"], c["height"], c["url"], "mp4", h.get("duration")
+        o = "horizontal" if w >= hh else "vertical"
+        if orient != "all" and o != orient:
+            continue
+        name = f"pix-{h['id']}.{ext}"
+        _download(link, pathlib.Path(out_dir) / name)
+        log_source(out_dir, name, {"source": "pixabay", "id": h["id"], "pageURL": h.get("pageURL"), "tags": h.get("tags"),
+                                   "user": h.get("user"), "duration": dur, "size": f"{w}x{hh}"})
+        print(f"{name}\t{w}x{hh}\t{h.get('user')}\t{h.get('tags', '')[:50]}")
+        got += 1
+    if not got:
+        print("  pixabay: ничего не подошло под фильтры", file=sys.stderr)
+    return got
+
+
+def mix(query, out_dir, n):
+    slug = re.sub(r"[^\w]+", "-", query.lower()).strip("-")
+    html = _get(f"https://mixkit.co/free-stock-video/{urllib.parse.quote(slug)}/").decode("utf8", "replace")
+    pages = {}
+    for m in re.findall(r'href="(/free-stock-video/[^"]+?-(\d+)/)"', html):
+        pages.setdefault(m[1], "https://mixkit.co" + m[0])
+    ids = []
+    for i in re.findall(r"assets\.mixkit\.co/videos/(\d+)/\1-\d+\.mp4", html):
+        if i not in ids:
+            ids.append(i)
+    got = 0
+    for i in ids:
+        if got >= n:
+            break
+        for q in ("1080", "720"):
+            u = f"https://assets.mixkit.co/videos/{i}/{i}-{q}.mp4"
+            try:
+                urllib.request.urlopen(urllib.request.Request(u, method="HEAD", headers={"User-Agent": UA}), timeout=30)
+            except urllib.error.HTTPError:
+                continue
+            name = f"mix-{i}.mp4"
+            _download(u, pathlib.Path(out_dir) / name)
+            log_source(out_dir, name, {"source": "mixkit", "id": i, "pageURL": pages.get(i), "quality": q, "src": u})
+            print(f"{name}\t{q}p\t{pages.get(i, '')}")
+            got += 1
+            break
+    if not got:
+        print("  mixkit: ссылки на ролики не найдены", file=sys.stderr)
+    return got
+
+
 def sheet(out_dir):
     d = pathlib.Path(out_dir)
     clips = sorted(p for p in d.glob("*.mp4") if not p.name.endswith(".src.mp4"))
@@ -138,11 +232,14 @@ def sheet(out_dir):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["yt", "ytcut", "pin", "sheet"])
+    ap.add_argument("cmd", choices=["yt", "ytcut", "pin", "sheet", "pix", "mix", "all"])
     ap.add_argument("a"); ap.add_argument("b", nargs="?")
     ap.add_argument("-n", type=int, default=4)
     ap.add_argument("--len", type=float, default=6)
     ap.add_argument("--at", type=float, default=0)
+    ap.add_argument("--min-w", type=int, default=1920)
+    ap.add_argument("--orient", choices=["horizontal", "vertical", "all"], default="all")
+    ap.add_argument("--photo", action="store_true")
     a = ap.parse_args()
     if a.cmd == "sheet":
         return sheet(a.a)
@@ -155,6 +252,26 @@ def main():
     out_dir = pathlib.Path(a.b)
     out_dir.mkdir(parents=True, exist_ok=True)
     slug = re.sub(r"\W+", "-", a.a.lower()).strip("-")[:30]
+    if a.cmd == "pix":
+        return pix(a.a, out_dir, a.n, a.min_w, a.orient, a.photo)
+    if a.cmd == "mix":
+        return mix(a.a, out_dir, a.n)
+    if a.cmd == "all":
+        for f, args in ((pix, (a.a, out_dir, a.n, a.min_w, a.orient, False)), (mix, (a.a, out_dir, a.n))):
+            try:
+                f(*args)
+            except Exception as e:
+                print(f"  ! {f.__name__}: {e}", file=sys.stderr)
+        for i, (vid, dur, title) in enumerate(yt_search(a.a, a.n)):
+            at = max(2.0, dur * 0.35)
+            name = f"yt-{slug}-{i}.mp4"
+            if yt_cut(vid, out_dir / name, at, a.len) and height(out_dir / name) < 720:
+                (out_dir / name).unlink()
+                continue
+            if (out_dir / name).exists():
+                log_source(out_dir, name, {"src": f"https://www.youtube.com/watch?v={vid}", "title": title, "at": round(at, 1), "len": a.len})
+                print(f"{name}\t{vid}\t{title[:70]}")
+        return sheet(out_dir)
     if a.cmd == "yt":
         for i, (vid, dur, title) in enumerate(yt_search(a.a, a.n)):
             at = max(2.0, dur * 0.35)
