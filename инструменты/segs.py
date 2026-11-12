@@ -2,7 +2,8 @@
 
 Запуск (python3 -I):
   segs.py --track TRACK.mp3|mp4 --words words.json --out ПАПКА [--engine v|iv] [--max 30] [--pad 0.5] "Слово..Слово" "Слово#2..END" ...
-Спецификация куска: первое..последнее слово фразы (регистр и знаки не важны), `#N` — N-е вхождение слова, `END` — до конца трека.
+Спецификация куска: первое..последнее слово фразы (регистр и знаки не важны), `#N` — N-е вхождение слова в тексте, `END` — до конца трека.
+Последнее слово без `#N` ищется после первого слова куска. Кусок с концом раньше начала — ошибка, код 3.
 words.json — список {"text","start","end"} (его даёт golos.py / words.py). Пишет ПАПКА/segs.json и seg-N.mp3 (mono 44.1k).
 Лимит доли лица — в коде: доля > --max % длины трека → код выхода 2, mp3 не режутся. Обойти флагом нельзя:
 хочешь больше — режь план. Оценка кредитов: V ≈1 кр/с, IV ≈0,7 кр/с (замеры на реальных роликах; HeyGen считает округлённо за кусок).
@@ -22,16 +23,18 @@ w = json.load(open(a.words))
 clean = lambda s: re.sub(r"[^a-zа-яёңөүәіұқғһ0-9]", "", s.lower())
 dur = float(subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", a.track]))
 
-def find(ref):
-    raw, _, n = ref.partition("#"); n = int(n or 1)
-    hits = [i for i, x in enumerate(w) if clean(x["text"]) == clean(raw)]
+def find(ref, after=-1):
+    # after: для последнего слова куска — без #N ищем первое вхождение после начала куска, с #N — N-е по всему тексту
+    raw, _, n = ref.partition("#"); explicit = bool(n); n = int(n or 1)
+    hits = [i for i, x in enumerate(w) if clean(x["text"]) == clean(raw) and (explicit or i >= after)]
     if len(hits) < n: print(f"слово «{raw}» (вхождение {n}) не найдено в words.json", file=sys.stderr); sys.exit(3)
     return hits[n - 1]
 
 plan = []
 for i, spec in enumerate(a.specs):
     x, _, y = spec.partition("..")
-    ia = find(x); end = y == "END"; ib = len(w) - 1 if end else find(y)
+    ia = find(x); end = y == "END"; ib = len(w) - 1 if end else find(y, after=ia)
+    if ib < ia: print(f"кусок «{spec}»: конец раньше начала — укажи #N у последнего слова", file=sys.stderr); sys.exit(3)
     s = max(0, w[ia]["start"] - a.pad)
     e = dur if end or ib + 1 >= len(w) else min(dur, w[ib + 1]["start"] + a.pad)
     plan.append(dict(i=i, start=round(s, 2), end=round(e, 2), file=f"seg-{i}.mp3", words=f"{w[ia]['text']}..{w[ib]['text']}"))
