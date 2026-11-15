@@ -5,7 +5,7 @@
 Ключи в .env: TELEGRAM_BOT_TOKEN (от @BotFather). TELEGRAM_CHAT_ID найдётся сам после того, как человек нажал
 Start у своего бота, и допишется в .env. Лимит бота — 50 МБ: больше — скрипт сожмёт копию до 720p и отправит её.
 """
-import json, pathlib, subprocess, sys, urllib.request, uuid
+import json, os, pathlib, shutil, subprocess, sys, urllib.request, uuid
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import _env
@@ -37,7 +37,7 @@ def chat_id():
     if not chats:
         sys.exit("Бот пока не знает тебя: открой своего бота в Telegram, нажми Start и запусти ещё раз.")
     cid = str(chats[-1])
-    with open(_env.ROOT / ".env", "a", encoding="utf-8") as f:
+    with open(_env.env_file(), "a", encoding="utf-8") as f:
         f.write(f"\nTELEGRAM_CHAT_ID={cid}\n")
     return cid
 
@@ -51,7 +51,7 @@ else:
     cap = args[1] if len(args) > 1 else f.stem
     if f.stat().st_size > 48 * 1024 * 1024:
         small = f.with_name(f.stem + "-превью.mp4")
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(f), "-vf", "scale=-2:'min(1280,ih)'", "-c:v", "libx264", "-crf", "28",
+        subprocess.run([shutil.which("ffmpeg", path=str(_env.VENV_BIN) + os.pathsep + os.environ.get("PATH", "")) or "ffmpeg", "-v", "error", "-y", "-i", str(f), "-vf", "scale=-2:'min(1280,ih)'", "-c:v", "libx264", "-crf", "28",
                         "-preset", "veryfast", "-c:a", "aac", "-b:a", "128k", str(small)], check=True)
         f, cap = small, cap + " (превью, сжато)"
     r = call("sendVideo", {"chat_id": cid, "caption": cap, "supports_streaming": "true"}, {"video": f})

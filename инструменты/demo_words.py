@@ -10,10 +10,10 @@ ap = argparse.ArgumentParser()
 ap.add_argument("text"); ap.add_argument("out"); ap.add_argument("--wps", type=float, default=2.4)
 a = ap.parse_args()
 t, out = 0.1, []
-for wd in pathlib.Path(a.text).read_text().split():
+for wd in pathlib.Path(a.text).read_text(encoding="utf-8").split():
     letters = len(re.sub(r"\W", "", wd))
     d = max(0.18, letters / (a.wps * 5.2))
     out.append({"text": wd, "start": round(t, 3), "end": round(t + d, 3)})
     t += d + 0.06 + (0.35 if wd[-1] in ".?!" else 0.15 if wd[-1] in ",:;" else 0)
-pathlib.Path(a.out).write_text(json.dumps(out, ensure_ascii=False, indent=1))
+pathlib.Path(a.out).write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
 print(f"{len(out)} слов, {t:.1f} с")

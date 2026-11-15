@@ -3,6 +3,7 @@
   python3 install.py            библиотеки анимаций целиком (~0,5 ГБ)
   python3 install.py --light    только проверенные нужные файлы (~90 МБ)
   python3 install.py --full     то же, но пак монтажёра целиком (~2,3 ГБ + зелёные экраны yt), а не отборный (~350 МБ)
+  python3 install.py --bez-paka   слабый интернет: без пака и библиотек-образцов (ffmpeg, Node, Remotion, карта 8 МБ); пак докачается позже тем же install.py
 
 Всё ставится внутрь папки движка, в .venv/: Python-пакеты (yt-dlp, fonttools), ffmpeg (static-ffmpeg),
 Node.js (nodeenv), пакеты Remotion в шаблон/. Повторный запуск безопасен: доставляет недостающее, ничего не удаляет.
@@ -16,6 +17,7 @@ BIN = VENV / ("Scripts" if WIN else "bin")
 EXE = ".exe" if WIN else ""
 LIGHT = "--light" in sys.argv
 FULL = "--full" in sys.argv
+BEZ_PAKA = "--bez-paka" in sys.argv
 fails = []
 
 
@@ -61,7 +63,10 @@ ok("ffmpeg") if (BIN / f"ffmpeg{EXE}").exists() else bad("ffmpeg не поста
 node = BIN / ("node.exe" if WIN else "node")
 if not node.exists() and not (VENV / "Scripts" / "node.exe").exists():
     run([BIN / f"nodeenv{EXE}", "-p", "--prebuilt", "--node=22.12.0"], check=True, env=env())
-ok(f"Node.js {run(['node', '-v'], capture_output=True, text=True, env=env()).stdout.strip()}")
+# полный путь: на Windows subprocess ищет программу по PATH самого Python, а не по env=
+node = next((p for p in (node, VENV / "Scripts" / "node.exe") if p.exists()), None) or shutil.which("node") or "node"
+r = run([node, "-v"], capture_output=True, text=True, env=env())
+ok(f"Node.js {r.stdout.strip()}") if r.returncode == 0 else bad("Node.js не запускается")
 
 print("3. Движок (Remotion — шаблон/node_modules)")
 npm = shutil.which("npm", path=env()["PATH"]) or "npm"
@@ -69,11 +74,16 @@ r = run([npm, "install", "--no-audit", "--no-fund", "--loglevel=error"], cwd=ROO
 ok("Remotion") if r.returncode == 0 else bad("npm install в шаблон/ не прошёл")
 
 print("3б. Спутниковая карта (шаблон/public/karta — глобус и витрины)")
+# карта нужна всегда (~8 МБ): без kg.json шаблон не собирается, даже с --bez-paka
 r = run([BIN / f"python{EXE}", "-I", ROOT / "инструменты" / "karta.py", "demo", ROOT / "шаблон" / "public"], capture_output=True, text=True)
-ok("глобус и материалы карты") if r.returncode == 0 else bad("карта не скачалась (нужен интернет): python3 -I инструменты/karta.py demo шаблон/public")
+if r is None: pass
+elif r.returncode == 0: ok("глобус и материалы карты")
+else: bad("карта не скачалась (нужен интернет): python3 -I инструменты/karta.py demo шаблон/public")
 
 print("4. Библиотеки анимаций (внешнее/)" + (" — лёгкая версия" if LIGHT else " — целиком"))
-for line in (ROOT / "внешнее" / "ИСТОЧНИКИ.tsv").read_text(encoding="utf-8").splitlines():
+if BEZ_PAKA:
+    ok("пропускаю (--bez-paka): это образцы для Claude, рендеру они не нужны")
+for line in ([] if BEZ_PAKA else (ROOT / "внешнее" / "ИСТОЧНИКИ.tsv").read_text(encoding="utf-8").splitlines()):
     if not line.strip() or line.startswith("#"):
         continue
     d, url, commit = line.split("\t")[:3]
@@ -101,11 +111,16 @@ for line in (ROOT / "внешнее" / "ИСТОЧНИКИ.tsv").read_text(encod
 
 print("4б. Пак монтажёра (звуки, засветки, переходы, элементы, текстуры, Lottie, шрифты)" + (" — полный" if FULL else " — отборный, ~350 МБ"))
 print("    файлы качаются с оригинальных источников (Freesound, Kenney, Pixabay, LottieFiles, Google Fonts…), 5–30 минут")
-r = run([BIN / f"python{EXE}", "-I", ROOT / "инструменты" / "pak.py", "install", "--all" if FULL else "--light"], env=env())
-ok("пак: внешнее/пак/ (каталог.json, АВТОРЫ.md)") if r.returncode == 0 else bad("пак не поставился: повтори `python3 инструменты/pak.py install --light` (докачает с места)")
+r = None if BEZ_PAKA else run([BIN / f"python{EXE}", "-I", ROOT / "инструменты" / "pak.py", "install", "--all" if FULL else "--light"], env=env())
+if r is None: ok("пропускаю (--bez-paka): ролики соберутся и без пака, звуков и засветок будет меньше")
+elif r.returncode == 0: ok("пак: внешнее/пак/ (каталог.json, АВТОРЫ.md)")
+else: bad("пак не поставился: повтори `python3 инструменты/pak.py install --light` (докачает с места)")
 
 print("5. Личные настройки")
+OBSHCHIE = pathlib.Path.home() / ".claude" / ".env"
 for src, dst in (("local.example.md", "local.md"), (".env.example", ".env")):
+    if dst == ".env" and OBSHCHIE.exists():
+        ok("ключи: общий файл ~/.claude/.env (движок читает его сам)"); continue
     if not (ROOT / dst).exists():
         shutil.copy(ROOT / src, ROOT / dst); ok(f"создан {dst}")
     else:
