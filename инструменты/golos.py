@@ -11,6 +11,8 @@ import argparse, base64, datetime, json, pathlib, re, subprocess, sys, urllib.er
 
 import sys; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent)); import _env
 LOG = _env.ROOT / "out" / "расход-elevenlabs.log"
+# Скорость по умолчанию по языку (наша настройка с 19.10.2026: кыргызский — 1.2, так же и в аватаре HeyGen).
+SKOROST_YAZYKA = {"ky": 1.2}
 VOICES = {"adam": "pNInz6obpgDQGcFmaJgB", "brian": "nPczCjzI2devNBz1zQrb", "harry": "SOYHLrjzK2X1ezoPC6cr"}
 
 
@@ -53,8 +55,11 @@ def main():
     ap.add_argument("text"); ap.add_argument("job")
     ap.add_argument("--voice", default="adam"); ap.add_argument("--model", default="eleven_v4")
     ap.add_argument("--lang", default="ru", help="язык ролика: ru, ky, en … или auto")
-    ap.add_argument("--stability", type=float, default=0.5); ap.add_argument("--speed", type=float, default=1.0)
+    ap.add_argument("--stability", type=float, default=0.5); ap.add_argument("--speed", type=float, default=None,
+                    help="0.7–1.2; по умолчанию 1.0, для ky — 1.2: ElevenLabs читает кыргызский медленно")
     a = ap.parse_args()
+    if a.speed is None:
+        a.speed = SKOROST_YAZYKA.get(a.lang, 1.0)
     text = pathlib.Path(a.text).read_text().strip()
     job = pathlib.Path(a.job); (job / "assets").mkdir(parents=True, exist_ok=True)
     vid = VOICES.get(a.voice, a.voice)
