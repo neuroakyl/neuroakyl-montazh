@@ -26,7 +26,7 @@ export const Subs: React.FC<{ t: number; y?: number; list?: Word[]; hide?: [numb
     const u = k(t, w.start - 0.02, 0.14, back);
     return (
       <div style={{ position: "absolute", left: 0, right: 0, top: y - 40, textAlign: "center" }}>
-        <span style={{ fontFamily: font(B.head), fontSize: size ?? 120, color: B.light, textTransform: "uppercase", display: "inline-block", transform: `scale(${lerp(0.6, 1, u)})`, textShadow: `0 6px 0 ${B.accent}, 0 10px 30px rgba(0,0,0,0.7)` }}>
+        <span style={{ fontFamily: font(B.head), fontSize: Math.min(size ?? 120, Math.floor(800 / (0.6 * Math.max(1, clean(w.text).length)))), color: B.light, textTransform: "uppercase", display: "inline-block", transform: `scale(${lerp(0.6, 1, u)})`, textShadow: `0 6px 0 ${B.accent}, 0 10px 30px rgba(0,0,0,0.7)` }}>
           {clean(w.text)}
         </span>
       </div>
