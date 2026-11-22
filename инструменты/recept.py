@@ -1,6 +1,6 @@
 """Рецепт ролика: постоянный дизайн автора + новый набор приёмов на каждый ролик, без повторов последних роликов.
 
-  python3 инструменты/recept.py <папка src ролика> [--ton spokoyno|energichno] [--name "тема"] [--fix tekst=box subs=pill …] [--seed N]
+  python3 инструменты/recept.py <папка src ролика> [--profil dinamika|golova|spokoyno|broll|do-posle] [--ton spokoyno|energichno] [--name "тема"] [--fix tekst=box subs=pill …] [--seed N]
   python3 инструменты/recept.py <src> --pak <папка пака>   другой пак (по умолчанию внешнее/пак)
   python3 инструменты/recept.py --pokaz                 банки вариантов и что было в последних роликах
   python3 инструменты/recept.py --proverka              все имена из банков есть в коде шаблона
@@ -34,6 +34,25 @@ BANKS = {
                "disc": [S, E], "sparkle": [E], "tag": [E]},
     "kamera": {"drift": [S, E], "handheld": [E], "breathe": [S], "punch": [E], "sway": [S], "steps": [E], "float": [S], "still": [S]},
 }
+# Профили под нишу (числа — шаблон/src/kit/profi.ts, свод эталонов — профи.md): тон + какие варианты банков допустимы.
+PROFILI = {
+    "dinamika": (E, {"kamera": {"punch", "steps", "handheld"}}),  # тренд, личный бренд, промо
+    "golova": (E, {"kamera": {"punch", "drift"}, "subs": {"karaoke", "underline", "pill", "marker", "outline", "glow"}}),  # эксперт в кадре
+    "spokoyno": (S, {"kamera": {"drift", "breathe", "still"}, "subs": {"lower", "underline", "marker", "pill"}}),  # премиум, медицина, история
+    "broll": (E, {"kamera": {"drift", "punch"}}),  # Б-роллы без лица
+    "do-posle": (E, {"kamera": {"drift", "punch"}}),
+}
+# Трендовые приёмы из разбора эталонов (шаблон/src/kit/trend.tsx). Рецепт даёт ролику 4 (спокойному — 2), сцены обязаны взять
+# минимум 2 (спокойный — 1): иначе proverka.py/deliver.py не пропустит. Так приёмы не лежат мёртвым грузом (Бобби, 22.11.2026).
+TREND = {
+    "dinamika": ["BlurWords", "BigSmall", "Flash", "PullIn", "BehindText", "PopForward", "EdgeCascade", "DrumNumber", "CoinWipe",
+                 "Cascade", "Mosaic", "ZoomUI", "NeonWord", "Silhouette", "ColorDisc"],
+    "golova": ["BlurWords", "BigSmall", "PullIn", "BehindText", "HandEllipse", "Underline", "PhotoCard", "TypeOn", "ZoomUI", "DrumNumber",
+               "LoadBar", "Flip"],
+    "do-posle": ["BigSmall", "PullIn", "CoinWipe", "Flash", "ZoomUI", "DrumNumber", "Tint", "BehindText"],
+    "broll": ["Flash", "PullIn", "Tint", "ColorDisc", "Mosaic", "Silhouette", "BigSmall", "Cascade"],
+    "spokoyno": ["BlurWords", "Breathe", "BigSmall", "Underline", "TypeOn", "PhotoCard", "Tint"],
+}
 FILES = {"perehody": "perehody.tsx", "tekst": "tekst.tsx", "subs": "subs.tsx", "fon": "fon.tsx", "akcent": "akcent.tsx", "kamera": "akcent.tsx"}
 NO_REPEAT = 3  # роликов назад без повтора
 NO_REPEAT_TR = 2
@@ -56,8 +75,8 @@ def brand():
     return b
 
 
-def pick_one(bank, ton, recent, rnd):
-    pool = [n for n, t in BANKS[bank].items() if ton in t]
+def pick_one(bank, ton, recent, rnd, allowed=None):
+    pool = [n for n, t in BANKS[bank].items() if ton in t and (not allowed or n in allowed)]
     fresh = [n for n in pool if n not in recent] or pool
     return rnd.choice(fresh)
 
@@ -158,7 +177,12 @@ def pak_pick(src, rnd, ton, need_tr, need_tex):
     return out, notes
 
 
-def make(src, ton, name, fixes, seed):
+def make(src, ton, name, fixes, seed, profil=None):
+    if profil:
+        if profil not in PROFILI:
+            sys.exit(f"нет профиля {profil}: {', '.join(PROFILI)}")
+        ton = PROFILI[profil][0]
+    allow = PROFILI[profil][1] if profil else {}
     hist = load_hist()
     rnd = random.Random(seed if seed is not None else time.time_ns())
     recent = {b: set() for b in BANKS}
@@ -167,7 +191,7 @@ def make(src, ton, name, fixes, seed):
             recent[b].add(h["pick"].get(b))
     for h in hist[-NO_REPEAT_TR:]:
         recent["perehody"].update(x for x in h["pick"].get("perehody", []) if x != "cut")
-    pick = {"ton": ton}
+    pick = {"ton": ton, **({"profil": profil} if profil else {})}
     # переходы: склейка — основа ритма, плюс 2–3 новых вида
     pool = [n for n, t in BANKS["perehody"].items() if ton in t and n != "cut"]
     fresh = [n for n in pool if n not in recent["perehody"]]
@@ -180,7 +204,7 @@ def make(src, ton, name, fixes, seed):
         chosen.append(rnd.choice([p for p in pool if p not in chosen]))
     pick["perehody"] = ["cut", chosen[0], "cut", *chosen[1:]]
     for b in ("tekst", "subs", "fon", "akcent", "kamera"):
-        pick[b] = pick_one(b, ton, recent[b], rnd)
+        pick[b] = pick_one(b, ton, recent[b], rnd, allow.get(b))
     if pick["fon"] == "pak" and pak_dir() is None:
         pick["fon"] = pick_one("fon", ton, recent["fon"] | {"pak"}, rnd)
     for f in fixes:
@@ -191,6 +215,11 @@ def make(src, ton, name, fixes, seed):
             if v not in BANKS[k]:
                 sys.exit(f"нет варианта {v} в банке {k}: {', '.join(BANKS[k])}")
             pick[k] = v
+    tp = profil or ("spokoyno" if ton == S else "golova")
+    recent_tr = {x for h in hist[-2:] for x in h["pick"].get("trend", [])}
+    bank = TREND[tp]
+    fresh = [x for x in bank if x not in recent_tr] or bank
+    pick["trend"] = rnd.sample(fresh, min(2 if tp == "spokoyno" else 4, len(fresh)))
     pak, notes = pak_pick(src, rnd, ton, "pak" in pick["perehody"], pick["fon"] == "pak")
     if pak:
         pick["pak"] = pak
@@ -200,6 +229,8 @@ def make(src, ton, name, fixes, seed):
     hist.append({"date": time.strftime("%Y-%m-%d"), "name": rec["name"], "pick": pick})
     HIST.write_text(json.dumps(hist[-30:], ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"Рецепт «{rec['name']}» → {out}")
+    if pick.get("trend"):
+        print("  тренд     " + ", ".join(pick["trend"]) + " — взять в сцены минимум " + ("1" if pick.get("profil") == "spokoyno" or pick.get("ton") == S else "2") + " (kit/trend.tsx), иначе сдача не пройдёт")
     for k in ("perehody", "tekst", "subs", "fon", "akcent", "kamera"):
         v = pick[k]
         print(f"  {k:9} {', '.join(v) if isinstance(v, list) else v}")
@@ -251,4 +282,4 @@ if __name__ == "__main__":
                 fixes.append(a[i]); i += 1
         seed = opt("--seed")
         PAK = opt("--pak")
-        make(a[0], opt("--ton", E), opt("--name"), fixes, int(seed) if seed else None)
+        make(a[0], opt("--ton", E), opt("--name"), fixes, int(seed) if seed else None, opt("--profil"))

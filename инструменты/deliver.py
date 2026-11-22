@@ -1,10 +1,24 @@
 """Сдача ролика: обложка первыми 0,1 с, звук −14 LUFS (истинный пик −1 дБ). Mac и Windows.
 
-  python инструменты/deliver.py видео.mp4 звук.wav обложка.jpg ВЫХОД.mp4
+  python инструменты/deliver.py видео.mp4 звук.wav обложка.jpg ВЫХОД.mp4 [--src ПАПКА_src] [--profil golova] [--prinyat "причина"]
+Перед сдачей — proverka.py (уровень профи: мёртвые кадры, дешёвые звуки). Есть ОШИБКИ — ролик не сдаётся;
+обойти можно только явно: --prinyat "почему так задумано" (причина пишется в лог рядом с роликом).
 """
 import json, pathlib, subprocess, sys
 
 v, a, c, o = sys.argv[1:5]
+_opt = lambda n: sys.argv[sys.argv.index(n) + 1] if n in sys.argv else None
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import proverka  # noqa: E402
+_pr, _p, _errs, _warns, _, _ = proverka.proverit(v, _opt("--src"), _opt("--profil"))
+for _e in _errs:
+    print("ОШИБКА  " + _e)
+for _w in _warns:
+    print("замечание  " + _w)
+if _errs:
+    if not _opt("--prinyat"):
+        sys.exit("ролик не сдан: монтаж не прошёл проверку уровня (proverka.py). Исправь ошибки или сдай явно с --prinyat \"причина\"")
+    pathlib.Path(o).with_suffix(".proverka.txt").write_text("принято с ошибками: " + _opt("--prinyat") + "\n" + "\n".join(_errs), encoding="utf-8")
 if not pathlib.Path(c).exists():
     sys.exit(f"нет обложки {c}: ролик без обложки не сдаём — python3 -I инструменты/oblozhka.py sdelat (SKILL.md §«Обложка»)")
 vw, vh = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", v],
