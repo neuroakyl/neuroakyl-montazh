@@ -82,7 +82,10 @@ def skleiki(d):
 
 def harakter(wav):
     """Замер звука: яркость (Гц), тональность (0–1), сколько звенит (с). Колокольчик = ярко + тонально + звенит."""
-    import numpy as np
+    try:
+        import numpy as np
+    except ImportError:  # старая установка без numpy — звук не проверяем, но сдачу не ломаем (python3 install.py доставит)
+        return 0, 0, 0
     sr = 22050
     x = np.frombuffer(subprocess.run(["ffmpeg", "-v", "error", "-i", str(wav), "-ac", "1", "-ar", str(sr), "-f", "s16le", "-"],
                                      capture_output=True).stdout, np.int16).astype(np.float32) / 32768

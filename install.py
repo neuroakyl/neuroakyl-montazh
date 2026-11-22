@@ -47,7 +47,7 @@ if not (BIN / f"python{EXE}").exists():
     run([sys.executable, "-m", "venv", VENV], check=True)
 py = BIN / f"python{EXE}"
 run([py, "-m", "pip", "install", "-q", "--upgrade", "pip"], check=True)
-run([py, "-m", "pip", "install", "-q", "--upgrade", "yt-dlp", "fonttools", "static-ffmpeg", "nodeenv"], check=True)
+run([py, "-m", "pip", "install", "-q", "--upgrade", "yt-dlp", "fonttools", "static-ffmpeg", "nodeenv", "numpy"], check=True)
 ok("yt-dlp, fonttools")
 # ffmpeg: static-ffmpeg качает сборку под систему; кладём ffmpeg/ffprobe рядом с python, чтобы они были в PATH окружения
 out = run([BIN / f"static_ffmpeg_paths{EXE}"], capture_output=True, text=True, env=env()).stdout
