@@ -101,7 +101,7 @@ export const chunks = (list: Word[] = words): Chunk[] => {
   let cur: Word[] = [];
   list.forEach((w, i) => {
     cur.push(w);
-    const end = /[.,!?:…»]$/.test(w.text) || cur.length >= 3 || cur.map((x) => x.text).join(" ").length > 18;
+    const end = /[.,!?:…»\u200b]$/.test(w.text) || cur.length >= 3 || cur.map((x) => x.text).join(" ").length > 18;
     if (end || i === list.length - 1) {
       out.push({ a: cur[0].start, b: 0, ws: cur });
       cur = [];
