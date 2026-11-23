@@ -13,3 +13,4 @@ remotion-scenes	https://github.com/lifeprompt-team/remotion-scenes	02c7a84241da7
 onda	https://github.com/degueba/onda	3c814051269597b31fee1603bef7ccfb93d091b6	70 компонентов и 18 переходов для Remotion.
 remotion-motion-graphics	https://github.com/Liamrjohnston/remotion-motion-graphics-skill	b860c7921f2220b9e2a84e815ba0ae7b10858f08	4 скилла моушн-графики на Remotion + примеры.
 adu-motion-video	https://github.com/adunext/adu-motion-video	31a03c36b5f510303305f9e931c448b75baa52d5	шаблоны анимаций под говорящую голову и эксплейнеры.
+earshot	https://github.com/Leonxlnx/earshot	4ac3d2ac2b151e1c23376f9ce7f3047a17050013	Запасной источник звуков (MIT): earshot sfx render рендерит банк из 252 звуков кодом на CPU без моделей. Скопирован целиком в earshot/, MCP не подключён.

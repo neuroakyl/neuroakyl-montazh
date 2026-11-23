@@ -5,7 +5,7 @@
 
 Шумодав static (постоянный гул), эхо комнаты −12 дБ, Voice AutoEQ (приятный тембр), мягкий компрессор, −16 LUFS.
 Без speech_isolation / studiovoice / bwe — они перерисовывают голос (на слух — «робот»).
-Бесплатный тариф: 2 ч в месяц и мелодия Auphonic в конце — её обрезаем до длины исходника.
+Бесплатный тариф: 2 ч в месяц, заставка Auphonic в начале (6,41 с) и мелодия в конце — обе обрезаем, длина = исходнику.
 Ключ — AUPHONIC_API_KEY в .env корня (auphonic.com → Account → API Key).
 """
 import json, pathlib, subprocess, sys, tempfile, time, urllib.request, uuid
@@ -33,6 +33,22 @@ def duration(path):
     out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
                          capture_output=True, text=True).stdout
     return float(out.strip())
+
+
+def offset(ref, out):
+    """Где в выходе Auphonic начинается наш звук: бесплатный тариф вставляет заставку в НАЧАЛО (6,41 с, замер 16.11.2026)
+    и мелодию в конец. Ищем сдвиг по огибающей громкости (10 мс) первых 60 с, в пределах 0..20 с."""
+    import array, math
+    def env(p, t0, d):
+        b = subprocess.run(["ffmpeg", "-v", "error", "-ss", str(t0), "-t", str(d), "-i", str(p), "-ac", "1", "-ar", "8000",
+                            "-f", "s16le", "-"], capture_output=True).stdout
+        a = array.array("h", b); hop = 80
+        e = [20 * math.log10(math.sqrt(sum(x * x for x in a[i:i + hop:4]) / (hop / 4)) + 1) for i in range(0, len(a) - hop, hop)]
+        m = sum(e) / len(e); s = math.sqrt(sum((x - m) ** 2 for x in e) / len(e)) or 1
+        return [(x - m) / s for x in e]
+    r, o = env(ref, 0, 40), env(out, 0, 62)
+    best = max(range(0, len(o) - len(r)), key=lambda L: sum(r[i] * o[L + i] for i in range(0, len(r), 2)))
+    return best / 100
 
 
 def main():
@@ -64,8 +80,11 @@ def main():
         # curl, а не urllib: ссылка уводит в хранилище, и urllib тащит туда ключ → 400
         subprocess.run(["curl", "-s", "-f", "-L", "-H", f"Authorization: bearer {k}", "-o", str(raw),
                         data["output_files"][0]["download_url"]], check=True)
-        # мелодия бесплатного тарифа — в конце: режем по длине исходника
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(raw), "-t", f"{duration(flac):.3f}", "-c", "copy", str(dst)], check=True)
+        # заставка бесплатного тарифа — в начале, мелодия — в конце: отрезаем обе, длина = исходнику (иначе голос отстаёт от видео)
+        sh = offset(flac, raw)
+        print(f"заставка Auphonic в начале: {sh:.2f} с — отрезаю", flush=True)
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{sh:.3f}", "-i", str(raw), "-t", f"{duration(flac):.3f}",
+                        "-c:a", "libmp3lame", "-b:a", "192k", str(dst)], check=True)
     print("готово:", dst)
 
 
