@@ -5,6 +5,7 @@ import { FORMAT, KLIPY_DURATION, Klipy } from "./Klipy";
 import { KARTA_DURATION, KartaDemo } from "./KartaDemo";
 import { DURATION, FPS } from "./lib";
 import { NOVOE_DURATION, NovoeDemo } from "./NovoeDemo";
+import { POVTOR_DURATION, POVTOR_H, POVTOR_W, Povtor } from "./Povtor";
 import { Reel } from "./Reel";
 import { BANKS, Varianty, bankLen, type Bank } from "./Varianty";
 import { TREND_DURATION, TrendDemo } from "./TrendDemo";
@@ -20,6 +21,7 @@ export const Root: React.FC = () => (
     {(Object.keys(BANKS) as Bank[]).map((b) => (
       <Composition key={b} id={`V-${b}`} component={Varianty} width={1080} height={1920} fps={FPS} durationInFrames={Math.round(bankLen(b) * FPS)} defaultProps={{ bank: b }} />
     ))}
+    <Composition id="Povtor" component={Povtor} width={POVTOR_W} height={POVTOR_H} fps={FPS} durationInFrames={Math.round(POVTOR_DURATION * FPS)} />
     <Composition id="Cover" component={Cover} width={1080} height={1920} fps={FPS} durationInFrames={1} defaultProps={{}} />
     <Composition id="CoverWide" component={Cover} width={1280} height={720} fps={FPS} durationInFrames={1} defaultProps={{}} />
   </>

@@ -1,37 +1,26 @@
-"""Проверка монтажа на уровень профи — по готовому видео, без глаз. Числа — из шаблон/src/kit/profi.ts (свод эталонов — профи.md).
+"""Проверка готового ролика перед сдачей — то, что можно мерить кодом, без глаз.
 
-  python3 -I proverka.py ВИДЕО.mp4 [--src ПАПКА_src] [--profil golova]
+  python3 -I proverka.py ВИДЕО.mp4 [--src ПАПКА_src]
 
 Что ловит:
-  ОШИБКА  «мёртвый кадр»: дольше, чем разрешает профиль, в кадре ничего не происходит (пауза-тест — так монтаж и палится как ИИ);
-  ОШИБКА  дешёвые звуки в public/sfx и public/pak ролика: яркий тональный звон (колокольчик, монетка, shimmer) — кроме профиля «mem»;
-  замечание  длина планов сильно не та для профиля (дёрганый спокойный ролик или вялая динамика);
-  замечание  стробоскоп: много планов короче 0,33 с вне профиля «динамика» (свод v2, правило 14);
-  замечание  монотонный ритм: серия склеек без единой передышки ≥1,5 с (закон 10: «дыхание и пауза»);
-  замечание  громкость ролика не −14 LUFS ±1 или true peak выше −1 dBFS.
-Пороги профилей — из profi.ts (свод профи.md v2, 156 эталонов).
-Профиль: --profil, иначе из src/recept.json (pick.profil или тон), иначе golova. src ищется сам: рядом с видео (движок/src) или ./src.
-deliver.py вызывает проверку перед сдачей: при ОШИБКАХ ролик не сдаётся (обойти — только явным --prinyat с причиной).
+  ОШИБКА  дешёвые звуки в public/sfx и public/pak ролика: яркий тональный звон (колокольчик, монетка, shimmer);
+  ОШИБКА  клип в public/clips не в частоте ролика (HeyGen 25 к/с при ролике 30) — кадры повторяются, лицо дёргается;
+  ОШИБКА  в сценах меньше 3 приёмов ядра трендового монтажа (разбор 22 эталонов 25.10: мелкое+огромное, слово из размытия,
+          отъезд-склейка, текст за спикером, пример-вырезка вперёд, вспышка со свушем) — Бобби 27.11;
+  ОШИБКА  лицо аватара застыло (freezedetect по области лица у каждого куска из src/litso.json, порог 0,12 с) — обычно стык
+          «лицо → Б-ролл»: клип дотянут стоп-кадром или переход держит лицо дольше живого клипа (Бобби 26.11, ролик 74);
+  замечание  громкость ролика не −14 LUFS ±1 или true peak выше −1 dBFS;
+  + tekst.py (аудит 24.11): ОШИБКА текст под интерфейсом Instagram, стоп-кадр перед концовкой; замечания — мелкий текст,
+    дубль плашки и субтитра, чужой текст/вотермарка, исходник растянут больше чем в 1,5 раза.
+Ритм и «мёртвые кадры» здесь не меряем: пороги из свода 765 роликов отозваны 26.11.2026 (Бобби: эталоны негодные).
+Новые пороги — только из ручных эталонов Бобби, разобранных покадрово (референсы/ручной-отбор).
+src ищется сам: рядом с видео (движок/src) или ./src. deliver.py вызывает проверку перед сдачей: при ОШИБКАХ ролик не сдаётся.
 """
 import json, pathlib, re, subprocess, sys
 
 HERE = pathlib.Path(__file__).resolve().parent
-PROFI = HERE.parent / "шаблон" / "src" / "kit" / "profi.ts"
-
-
-def profili():
-    """Профили из profi.ts (один источник чисел): имя → plan [a, b], sobytie."""
-    t = PROFI.read_text(encoding="utf-8")
-    out = {}
-    for m in re.finditer(r'^\s+"?([\w-]+)"?: \{\s*\n?\s*imya: "([^"]+)", plan: \[([\d.]+), ([\d.]+)\], sobytie: ([\d.]+)', t, re.M):
-        out[m.group(1)] = {"imya": m.group(2), "plan": (float(m.group(3)), float(m.group(4))), "sobytie": float(m.group(5))}
-    return out
-
-
-def chislo(imya, default):
-    """Число из ZVUK/DLIT в profi.ts (один источник): `lufs: -14`, `truePeak: -1.0`, `brollMin: 0.33`."""
-    m = re.search(rf"\b{imya}:\s*(-?[\d.]+)", PROFI.read_text(encoding="utf-8"))
-    return float(m.group(1)) if m else default
+sys.path.insert(0, str(HERE))  # tekst.py рядом; при python3 -I папка скрипта не в пути
+LUFS, TRUE_PEAK = -14.0, -1.0  # правило сдачи (deliver.py)
 
 
 def najti_src(video, src):
@@ -42,51 +31,6 @@ def najti_src(video, src):
         if (c / "recept.json").exists():
             return c
     return None
-
-
-def profil_iz(src):
-    try:
-        p = json.loads((src / "recept.json").read_text(encoding="utf-8")).get("pick", {})
-        return p.get("profil") or ("spokoyno" if p.get("ton") == "spokoyno" else "golova")
-    except Exception:
-        return "golova"
-
-
-def raznica_kadrov(video):
-    """Средняя разница соседних кадров (0–255) по каждому кадру, на уменьшенной картинке."""
-    r = subprocess.run(["ffmpeg", "-hide_banner", "-v", "error", "-i", video, "-an", "-vf",
-                        "fps=15,scale=180:-2,format=gray,tblend=all_mode=difference,signalstats,metadata=print:key=lavfi.signalstats.YAVG:file=-",
-                        "-f", "null", "-"], capture_output=True, text=True)
-    vals, t = [], []
-    for line in r.stdout.splitlines():
-        if "pts_time:" in line:
-            t.append(float(line.split("pts_time:")[1]))
-        elif "YAVG=" in line:
-            vals.append(float(line.split("=")[1]))
-    return list(zip(t, vals))
-
-
-def sobytiya(d):
-    """Событие в кадре: всплеск разницы кадров относительно своей округи (±1 с) — склейка, влёт слова, плашка, панч.
-    Порог локальный: в динамичном ролике фон и так живой, событие — то, что выделяется на нём (≥2,2× округи и ≥2,5)."""
-    if not d:
-        return [], 0
-    ev = []
-    for i, (t, v) in enumerate(d):
-        okr = sorted(x for tt, x in d if abs(tt - t) <= 1.0)
-        med = okr[len(okr) // 2]
-        if v >= max(2.5, 2.2 * med) and v >= max(x for _, x in d[max(0, i - 2):i + 3]):
-            ev.append(t)
-    return ev, 0
-
-
-def skleiki(d):
-    """Жёсткие склейки — очень большие всплески (≥ 12) с промежутком ≥ 0,2 с."""
-    out = []
-    for t, v in d:
-        if v >= 12 and (not out or t - out[-1] >= 0.2):
-            out.append(t)
-    return out
 
 
 def harakter(wav):
@@ -120,40 +64,87 @@ def gromkost(video):
     return (float(m[-1]) if m else None), (float(pk[-1]) if pk else None)
 
 
-def proverit(video, src=None, profil=None):
-    src = najti_src(video, src)
-    pr_all = profili()
-    profil = profil or (profil_iz(src) if src else "golova")
-    pr = pr_all.get(profil) or pr_all["golova"]
-    errs, warns = [], []
+def fps_of(path):
+    """частота кадров видеопотока (r_frame_rate), 0 — не удалось"""
+    r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate", "-of", "csv=p=0", str(path)],
+                       capture_output=True, text=True)
+    try:
+        a, _, b = r.stdout.strip().partition("/")
+        return float(a) / float(b or 1)
+    except (ValueError, ZeroDivisionError):
+        return 0.0
 
-    d = raznica_kadrov(video)
-    dur = d[-1][0] if d else 0
-    ev, _ = sobytiya(d)
-    tochki = [0.0] + ev + [max(0.0, dur - 0.8)]  # последние 0,8 с — финальный кадр держится, это норма
-    for a, b in zip(tochki, tochki[1:]):
-        dvizh = [v for t, v in d if a < t < b]
-        zhivoy = dvizh and sum(dvizh) / len(dvizh) >= 3.0  # кадр сам всё время движется (лента, счётчик, камера) — не мёртвый
-        if b - a > pr["sobytie"] + 0.5 and b - a > 1.0 and not zhivoy:
-            errs.append(f"мёртвый кадр {a:.1f}–{b:.1f} с ({b - a:.1f} с без события; профиль «{pr['imya']}» — не дольше {pr['sobytie']} с): "
-                        f"добавить событие по смыслу — панч на ударное слово, Б-ролл, плашку, смену крупности")
-    cuts = skleiki(d)
-    if len(cuts) >= 3:
-        planы = sorted(b - a for a, b in zip([0.0] + cuts, cuts + [dur]))
-        med = planы[len(planы) // 2]
-        lo, hi = pr["plan"]
-        if med < lo / 2 or med > hi * 2:
-            warns.append(f"средний план {med:.2f} с, а для «{pr['imya']}» {lo}–{hi} с")
-        # стробоскоп: планы короче порога читаемости (0,33 с) — в динамике допустимы каскады, в остальных профилях нет
-        min_plan = chislo("brollMin", 0.33)
-        korotkie = [x for x in planы if x < min_plan]
-        if profil != "dinamika" and len(planы) >= 6 and len(korotkie) / len(planы) > 0.4:
-            warns.append(f"стробоскоп: {len(korotkie)} из {len(planы)} планов короче {min_plan} с — глаз не успевает прочитать кадр "
-                         f"(для «{pr['imya']}» длиннее; склеить или убрать лишние)")
-        # дыхание: серия быстрых склеек без единой передышки — признак пулемёта (закон 10)
-        if dur >= 12 and len(planы) >= 8 and max(planы) < 1.5 and profil != "spokoyno":
-            warns.append(f"монотонный ритм: {len(planы)} планов, самый длинный {max(planы):.1f} с — нужна передышка 1,8–3 с "
-                         f"без шума после серии быстрых кадров (перед выводом или призывом)")
+
+def dlitelnost(video):
+    r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", video], capture_output=True, text=True)
+    try:
+        return float(r.stdout.strip())
+    except ValueError:
+        return 0.0
+
+
+def zamerzaniya(video, src):
+    """Застывания лица: freezedetect по центру кадра (лицо) в окне каждого куска litso.json [start; end + 0,5]."""
+    lj = src / "litso.json" if src else None
+    if not lj or not lj.exists():
+        return []
+    try:
+        kuski = json.loads(lj.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    r = subprocess.run(["ffmpeg", "-hide_banner", "-i", str(video), "-an", "-vf",
+                        "crop=iw*0.30:ih*0.22:iw*0.35:ih*0.18,scale=320:-2,freezedetect=n=-58dB:d=0.12", "-f", "null", "-"],
+                       capture_output=True, text=True).stderr
+    st = [float(x) for x in re.findall(r"freeze_start: ([\d.]+)", r)]
+    en = [float(x) for x in re.findall(r"freeze_end: ([\d.]+)", r)]
+    out = []
+    konec = dlitelnost(str(video))
+    for a, b in zip(st, en + [konec] * (len(st) - len(en))):
+        if b <= 0.2:  # первые кадры — обложка, её вшивает deliver.py (ложная ошибка у любого ролика, 74 27.11)
+            continue
+        for k in kuski:
+            if a < k["end"] + 0.5 and b > k["start"]:
+                out.append(f"лицо {k['id']} застыло {a:.2f}–{b:.2f} с ({b - a:.2f} с; кусок {k['start']:.2f}–{k['end']:.2f}, "
+                           f"живой до {k['start'] + k.get('live', k['end'] - k['start']):.2f}) — уходить из лица по kit/litso vyhod(), клип не дотягивать (kuski.py)")
+                break
+    return out
+
+
+# Ядро трендового монтажа — разбор 22 эталонов Бобби 25.10 (../референсы/trend-montage/РАЗБОР.md), детали kit/trend.tsx.
+# Ролики 60–74 ставили почти только Flash (Бобби 27.11: «разбирали, а самое важное ты не применяешь»).
+YADRO = {"BigSmall": "мелкое + огромное (смешанные шрифты, ключевое жирным)", "BlurWords": "слово из размытия",
+         "PullIn": "отъезд-склейка", "BehindText": "текст за спикером", "PopForward": "пример-вырезка вылетает вперёд",
+         "Flash": "вспышка-переход со свушем", "PushCut": "толчок в склейку (свод 27.11)"}
+YADRO_MIN = 3
+DEMO = {"TrendDemo.tsx", "Varianty.tsx", "NovoeDemo.tsx", "KartaDemo.tsx", "Root.tsx", "Cover.tsx", "Povtor.tsx"}
+
+
+def tryuki(src):
+    """сколько приёмов ядра реально стоит в сценах ролика; Title с рецептом tekst=blur считается словом из размытия"""
+    if not src:
+        return []
+    txt = " ".join(f.read_text(encoding="utf-8", errors="ignore") for f in src.glob("*.tsx") if f.name not in DEMO)
+    est = {n for n in YADRO if re.search(r"<" + n + r"\b", txt)}
+    try:
+        if json.loads((src / "recept.json").read_text(encoding="utf-8"))["pick"].get("tekst") in ("blur", "rise", "fast") and "<Title" in txt:
+            est.add("BlurWords")
+        if any(x in ("dive", "pull") for x in json.loads((src / "recept.json").read_text(encoding="utf-8"))["pick"].get("perehody", [])):
+            est.add("PullIn")
+        if "push" in json.loads((src / "recept.json").read_text(encoding="utf-8"))["pick"].get("perehody", []) and "<Shots" in txt:
+            est.add("PushCut")
+    except Exception:
+        pass
+    if len(est) >= YADRO_MIN:
+        return []
+    net = [f"{n} — {YADRO[n]}" for n in YADRO if n not in est]
+    return [f"трендовых приёмов ядра {len(est)} из {YADRO_MIN} нужных (стоят: {', '.join(sorted(est)) or 'ничего'}). "
+            f"Добавить из kit/trend.tsx: " + "; ".join(net)]
+
+
+def proverit(video, src=None):
+    src = najti_src(video, src)
+    errs, warns = [], []
+    dur = dlitelnost(video)
 
     if src:
         pub = src.parent / "public"
@@ -162,30 +153,32 @@ def proverit(video, src=None, profil=None):
             if f'"{wav.stem}"' not in kod and wav.name not in kod and "pak" not in wav.parts:
                 continue  # лежит, но в ролике не звучит
             cen, ton, ring = harakter(wav)
-            if cen > 2000 and ton > 0.85 and ring > 0.5 and profil != "mem":
+            if cen > 2000 and ton > 0.85 and ring > 0.5:
                 errs.append(f"дешёвый звук {wav.relative_to(pub)}: звенит {ring:.2f} с, яркость {cen:.0f} Гц (колокольчик/шиммер) — "
                             f"заменить на удар, бас, щелчок или фоли (pak.py find удар)")
 
-        try:
-            trend = json.loads((src / "recept.json").read_text(encoding="utf-8")).get("pick", {}).get("trend", [])
-        except Exception:
-            trend = []
-        if trend:
-            sceny = " ".join(f.read_text(encoding="utf-8", errors="ignore") for f in src.rglob("*.tsx")
-                             if "kit" not in f.parts and not f.stem.endswith("Demo") and f.stem not in ("Varianty", "Root"))
-            vzyato = [x for x in trend if re.search(rf"<{x}\b", sceny)]
-            nado = 1 if profil == "spokoyno" else 2
-            if len(vzyato) < nado:
-                errs.append(f"трендовые приёмы рецепта не использованы: взято {len(vzyato)} из {', '.join(trend)} (нужно ≥{nado}) — "
-                            f"детали в kit/trend.tsx, когда брать — приёмы.md «Тренд»")
-
     lufs, peak = gromkost(video)
-    celevaya = chislo("lufs", -14)
-    if lufs is not None and abs(lufs - celevaya) > 1.0:
-        warns.append(f"громкость {lufs:.1f} LUFS, норма {celevaya:.0f} ±1 (deliver.py выровняет)")
-    if peak is not None and peak > chislo("truePeak", -1.0):
-        warns.append(f"true peak {peak:.1f} dBFS выше {chislo('truePeak', -1.0):.0f} — на телефоне будет клип (deliver.py выровняет)")
-    return profil, pr, errs, warns, len(ev), dur
+    if lufs is not None and abs(lufs - LUFS) > 1.0:
+        warns.append(f"громкость {lufs:.1f} LUFS, норма {LUFS:.0f} ±1 (deliver.py выровняет)")
+    if peak is not None and peak > TRUE_PEAK:
+        warns.append(f"true peak {peak:.1f} dBFS выше {TRUE_PEAK:.0f} — на телефоне будет клип (deliver.py выровняет)")
+    # частота кусков видео ≠ частоте ролика (HeyGen отдаёт 25 к/с, ролик 30) — каждый 6-й кадр повторяется, лицо дёргается
+    # (ролик 68, 24.11.2026). Чинить: ffmpeg -vf "minterpolate=fps=30:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1"
+    if src and (src.parent / "public" / "clips").is_dir():
+        fps_v = fps_of(video)
+        for clip in sorted((src.parent / "public" / "clips").glob("*.mp4")):
+            f = fps_of(clip)
+            if fps_v and f and abs(f - fps_v) > 0.5:
+                errs.append(f"клип {clip.name}: {f:g} к/с, а ролик {fps_v:g} — кадры повторяются, движение дёргается. Перегнать: "
+                            f'ffmpeg -i {clip.name} -vf "minterpolate=fps={fps_v:g}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1" …')
+    errs += zamerzaniya(video, src)
+    errs += tryuki(src)
+    # то, что kritik ловил глазами в каждом ролике (аудит 24.11): безопасные зоны, стоп-кадр у концовки, дубли, чужой текст, мыло
+    import tekst
+    e2, w2 = tekst.proverit_tekst(video, src, dur)
+    errs += e2
+    warns += w2
+    return errs, warns, dur
 
 
 if __name__ == "__main__":
@@ -193,8 +186,8 @@ if __name__ == "__main__":
     if not a or a[0].startswith("-"):
         sys.exit(__doc__)
     opt = lambda n: a[a.index(n) + 1] if n in a else None
-    profil, pr, errs, warns, n_ev, dur = proverit(a[0], opt("--src"), opt("--profil"))
-    print(f"профиль: {pr['imya']} · событий в кадре {n_ev} за {dur:.1f} с")
+    errs, warns, dur = proverit(a[0], opt("--src"))
+    print(f"ролик {dur:.1f} с")
     for e in errs:
         print("ОШИБКА  " + e)
     for w in warns:

@@ -7,7 +7,7 @@ import { PEREHODY, PakOver, trDef } from "./vary/perehody";
 /**
  * Ролик = список кадров с переходами. Кадр 1,5–3 с, на 60 с — 20+ кадров (SKILL.md «живо и объёмно»).
  *
- *   tr — переход В этот кадр, любой из банка kit/vary/perehody.tsx (21 вид: cut, slide-l/r/u/d, dive, pull, whip, flash,
+ *   tr — переход В этот кадр, любой из банка kit/vary/perehody.tsx (22 вида: cut, push, slide-l/r/u/d, dive, pull, whip, flash,
  *        glitch, iris, wipe, shutter, spin, squash, pixel, doors, blur, stretch, card, pak). Старые имена l r u d z тоже работают.
  *        Не указан — берётся из рецепта ролика по кругу (recept.json → pick.perehody): так каждый ролик со своим набором.
  *   hits — секунды ударов (главные слова): весь кадр коротко толкается на 4–5 %.
@@ -43,8 +43,9 @@ export const punchAt = (t: number, hits: number[], amp = 0.045) => {
   return p;
 };
 
-/** drift — медленный наезд внутри кадра (доля в секунду, до 3 %): кадр не стоит */
-export const Shots: React.FC<{ t: number; list: Shot[]; hits?: number[]; bg?: string; amp?: number; drift?: number }> = ({ t, list, hits = [], bg = "#000", amp, drift = 0.008 }) => {
+/** drift — медленный наезд внутри кадра (доля в секунду, до 3 %). По умолчанию 0: у 7 эталонов из 13 на спикере дрейфа нет (свод 27.11);
+ *  Б-роллу и финалу — 0,01–0,03 своим Shots или Breathe rate. */
+export const Shots: React.FC<{ t: number; list: Shot[]; hits?: number[]; bg?: string; amp?: number; drift?: number }> = ({ t, list, hits = [], bg = "#000", amp, drift = 0 }) => {
   const all = resolveShots(list);
   const cur = shotAt(all, t);
   const frame = (i: number, st: React.CSSProperties = {}, key = String(i)) => {

@@ -287,7 +287,9 @@ def main():
         script = open(args.text, encoding="utf-8").read() if os.path.exists(args.text) else args.text
     script_words = script.split() if script else None
 
-    bar_h = detect_bar(args.video)
+    # Полоса HeyGen есть только в видео; на чистом звуке или с --source mms cv2 не нужен (грабля 25.11.2026, ролик 70)
+    audio_only = os.path.splitext(args.video)[1].lower() in (".wav", ".mp3", ".m4a", ".flac", ".aac", ".ogg")
+    bar_h = None if (audio_only or args.source == "mms") else detect_bar(args.video)
     cues, fps = ([], 25.0)
     if bar_h:
         cues, fps = bar_cues(args.video, bar_h)

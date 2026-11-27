@@ -11,6 +11,8 @@ const FACES: [string, string, string?][] = [
   [F.script, "GreatVibesKG.ttf"],
   [F.serif, "PlayfairDisplay-Italic-Variable.ttf", "400 900"],
   [F.narrow, "Oswald-Variable.ttf", "200 700"],
+  [F.inter, "Inter-Variable.ttf", "100 900"], // Inter 4 (OFL), ң ө ү есть — проверено fontTools 27.11.2026
+  [F.interI, "Inter-Italic-Variable.ttf", "100 900"],
 ];
 
 export function useFonts() {

@@ -124,7 +124,7 @@ export const Reel: React.FC = () => {
           <Shots t={t} list={list} hits={[at("старт")]} />
         </AbsoluteFill>
       )}
-      {ready && t < BODY_END && <Subs t={t} y={1560} />}
+      {ready && t < BODY_END && <Subs t={t} y={1330} />}
       {CTA && t >= BODY_END && <Ending t={t} start={BODY_END} cfg={CTA} />}
       <Grain t={t} />
       <Handle />

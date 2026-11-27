@@ -15,15 +15,16 @@ export type Pick = {
   fon: string; // фон графических сцен
   akcent: string; // чем выделяется главное (обводка, стрелка…)
   kamera: string; // как живёт кадр
-  ton?: "spokoyno" | "energichno";
+  ton?: "spokoyno" | "sredne" | "dinamichno" | "energichno"; // energichno — старое имя динамичного
+  temp?: { krupnost_s: number; zoom_max: number; punch: number; broll_max_s: number; akcent_kazhdye_s: number; tryaska: boolean; perehodov: number; krupnosti?: number[] }; // recept.py TEMP; krupnosti — уровни джамп-катов
   pak?: { perehod?: string; perehodBlend?: "screen" | "normal"; tekstura?: string; sfxPik?: Record<string, number> }; // файлы из пака в public/pak (pak.py take)
 };
 export type Recept = { brand: Brand; pick: Pick; seed?: number; name?: string };
 
-const FONTS: Record<string, string> = { head: F.head, head2: F.head2, ui: F.ui, serif: F.serif, narrow: F.narrow, script: F.script };
+const FONTS: Record<string, string> = { head: F.head, head2: F.head2, ui: F.ui, serif: F.serif, narrow: F.narrow, script: F.script, inter: F.inter, interI: F.interI };
 const raw = R as unknown as Partial<Recept>;
 export const RECEPT: Recept = {
-  brand: { accent: "#FFD400", dark: "#0B0B0C", light: "#FFFFFF", head: "head", text: "ui", ...(raw.brand ?? {}) },
+  brand: { accent: "#FFD400", dark: "#0B0B0C", light: "#FFFFFF", head: "head", text: "inter", ...(raw.brand ?? {}) },
   pick: { perehody: ["cut", "dive", "slide-l"], tekst: "blur", subs: "karaoke", fon: "gradient", akcent: "ellipse", kamera: "drift", ...(raw.pick ?? {}) },
   seed: raw.seed ?? 1,
   name: raw.name,

@@ -5,7 +5,7 @@ import { staticFile } from "remotion";
 import { B, hexA } from "./recept";
 
 /**
- * Банк переходов: 21 вид. Время s — секунды от начала нового кадра (слово, на котором склейка).
+ * Банк переходов: 22 вида (push — толчок в склейку, основной вместо вспышки, свод 27.11). Время s — секунды от начала нового кадра (слово, на котором склейка).
  * Ни один переход не делает полупрозрачного наложения двух кадров: старый уходит, новый приходит, или их делит граница.
  * У каждого — звук (sound.tsx shotCues): движение → свуш, вспышка/глитч → удар, склейка → тихий клик.
  *
@@ -19,7 +19,7 @@ export type TrDef = {
   oldOnTop?: boolean;
   over?: (s: number) => React.ReactNode;
   sfx: "click" | "whoosh" | "hit";
-  ton: ("spokoyno" | "energichno")[];
+  ton: ("spokoyno" | "sredne" | "energichno")[]; // справка; выбор по тону делает recept.py
   // повторить новый кадр ещё раз со своим стилем (двери: верхняя и нижняя половины)
   neu2?: (s: number) => St;
 };
@@ -71,8 +71,23 @@ export const PEREHODY: Record<string, TrDef> = {
     sfx: "whoosh",
     ton: BOTH,
   },
-  // новый кадр садится с 160 % из размытия поверх старого
-  pull: { d: 0.38, neu: (s) => ({ transform: `scale(${lerp(1.6, 1, k(s, 0, 0.38, sharp))})`, filter: `blur(${lerp(14, 0, k(s, 0, 0.3, sharp))}px)` }), sfx: "whoosh", ton: BOTH },
+  // толчок в склейку (свод 27.11, 02, 06, 09, урок 14 — основная замена вспышки): старый план 1 → 1,22 за 0,13 с с разгоном
+  // (u^1,5 — кадры 06: 100/103/108/115/125 %) и смазом до 10 px, голая склейка, новый садится с 125 % за 0,13 с (easeOutExpo, смаз 6 → 0). Звук — вжух.
+  push: {
+    d: 0.26,
+    old: (s) => (s < 0.13 ? { transform: `scale(${lerp(1, 1.22, Math.pow(s / 0.13, 1.5))})`, transformOrigin: "50% 45%", filter: `blur(${10 * Math.pow(s / 0.13, 1.5)}px)` } : null),
+    neu: (s) => {
+      if (s < 0.13) return null;
+      const u = Math.min(1, (s - 0.13) / 0.13);
+      const e = u >= 1 ? 1 : 1 - Math.pow(2, -10 * u);
+      return { transform: `scale(${lerp(1.25, 1, e)})`, transformOrigin: "50% 45%", filter: e < 1 ? `blur(${lerp(6, 0, Math.min(1, e * 1.5))}px)` : undefined };
+    },
+    oldOnTop: true,
+    sfx: "whoosh",
+    ton: ["energichno"],
+  },
+  // влёт: новый кадр садится с 128 % за 0,18 с со смазом 6 px (свод 27.11, эталоны 02, 06: 125–130 % за 0,1–0,17 с; было 160 % / 0,38 / 14 — тяжело)
+  pull: { d: 0.18, neu: (s) => ({ transform: `scale(${lerp(1.28, 1, k(s, 0, 0.18, sharp))})`, filter: `blur(${lerp(6, 0, k(s, 0, 0.12, sharp))}px)` }), sfx: "whoosh", ton: BOTH },
   // хлыст: очень быстрый проезд с размытием
   whip: {
     d: 0.22,

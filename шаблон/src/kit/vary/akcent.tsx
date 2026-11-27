@@ -163,9 +163,12 @@ export const kamera = (t: number, hits: number[] = [], kind?: string): string =>
     case "sway":
       return `rotate(${Math.sin(t * 0.7) * 0.6}deg) scale(${1.03 * hit(0.03)})`;
     case "steps": {
-      // рывки крупности 100 ↔ 112 % на каждом ударе (как в трендовых роликах)
+      // джамп-каты крупности на каждом ударе (свод 27.11: 10 из 13 эталонов), уровни по тону из рецепта (TEMP krupnosti):
+      // динамичный 1 / 1,15 / 1,3 (верхний — каждый третий скачок), средний 1 / 1,15, спокойный 1 / 1,08
       const i = hits.filter((h) => h <= t).length;
-      return `scale(${i % 2 ? 1.12 : 1})`;
+      const lv = P.temp?.krupnosti ?? [1, 1.12];
+      const up = i % 2 ? (lv.length > 2 && Math.floor(i / 2) % 3 === 2 ? lv[lv.length - 1] : lv[1]) : lv[0];
+      return `scale(${up})`;
     }
     case "float":
       return `translate(${Math.sin(t * 0.35) * 16}px, ${Math.cos(t * 0.3) * 12}px) scale(1.04)`;

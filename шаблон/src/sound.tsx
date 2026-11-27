@@ -1,7 +1,6 @@
 import React from "react";
 import { Audio, Sequence, interpolate, staticFile } from "remotion";
-import { BODY_END, DURATION, FPS, has, words } from "./lib";
-import { ZVUK } from "./kit/profi";
+import { BODY_END, DURATION, FPS, has } from "./lib";
 import { trDef } from "./kit/vary/perehody";
 import { P } from "./kit/vary/recept";
 import { CTA, REEL } from "./settings";
@@ -28,39 +27,16 @@ export const shotCues = (shots: { a: number; tr?: string }[]): Cue[] => {
       if (kind === "click") return [s.a - pik("click", 0.02), "click", -14];
       if (kind === "hit") return [s.a - pik("hit", 0.02), "hit", -4, pik("hit", 0) + 1.2];
       const n = ["whoosh1", "whoosh2", "whoosh3"][i % 3];
-      return [s.a - pik(n, 0.1), n, s.tr === "dive" ? -6 : -4, pik(n, 0) + 1.0];
+      const cut = s.tr === "push" ? s.a + 0.13 : s.a; // push: склейка после толчка 0,13 с — пик вжуха на ней (урок 14)
+      return [cut - pik(n, 0.1), n, s.tr === "dive" ? -6 : -4, pik(n, 0) + 1.0];
     });
 };
 
 // Реплики ролика. Пример: [at("слово") - 0.05, "pop", -5]  — файл public/sfx/pop.wav. Пик звука — на пик движения.
 export const CUES = (): Cue[] => [];
 
-// Музыка приседает под голос и поднимается в паузах (профи: −18…−24 дБ под речью, −8…−12 в паузах ≥0,8 с; атака 50 мс, отпуск 250 мс).
-// Речь — из words.json (паузы короче 0,8 с считаются речью). REEL.musicDb — уровень под голосом, если задан в settings.ts.
-const RECH: [number, number][] = (() => {
-  const out: [number, number][] = [];
-  for (const w of words) {
-    const last = out.at(-1);
-    if (last && w.start - last[1] < ZVUK.pauzaDlyaPodema) last[1] = Math.max(last[1], w.end);
-    else out.push([w.start, w.end]);
-  }
-  return out;
-})();
-const podGolos = (t: number) => {
-  // 1 — идёт речь, 0 — пауза; плавно: за ZVUK.ataka до слова уже приседает, через ZVUK.otpusk после — поднимается
-  let v = 0;
-  for (const [a, b] of RECH) {
-    if (t < a - ZVUK.ataka || t > b + ZVUK.otpusk) continue;
-    v = Math.max(v, t < a ? (t - (a - ZVUK.ataka)) / ZVUK.ataka : t > b ? 1 - (t - b) / ZVUK.otpusk : 1);
-  }
-  return v;
-};
-const musicVol = (f: number) => {
-  const t = f / FPS;
-  const under = REEL.musicDb ?? ZVUK.muzykaPodGolos;
-  const level = under + (ZVUK.muzykaVPauze - ZVUK.muzykaPodGolos) * (1 - podGolos(t));
-  return db(level) * interpolate(t, [0, 0.3, DURATION - 1.0, DURATION], [0, 1, 1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
-};
+const musicVol = (f: number) =>
+  db(REEL.musicDb) * interpolate(f / FPS, [0, 0.3, DURATION - 1.0, DURATION], [0, 1, 1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
 
 export const Sound: React.FC<{ shots?: { a: number; tr?: string }[] }> = ({ shots = [] }) => (
   <>

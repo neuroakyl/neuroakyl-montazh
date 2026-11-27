@@ -12,7 +12,7 @@ import React, { createContext, useContext, useLayoutEffect, useRef, useState } f
 import { AbsoluteFill, Img, continueRender, delayRender, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 
 export type KCam = { lon: number; lat: number; zoom: number; bearing?: number; tilt?: number };
-export type KKey = KCam & { t: number; fly?: boolean; ease?: "inOut" | "out" };
+export type KKey = KCam & { t: number; fly?: boolean; ease?: "inOut" | "out" | "sine" };
 export type Shape = number[][][]; // [[[lon, lat], …], …] — контуры (karta.py granica)
 
 const TILE = 256;
@@ -65,7 +65,9 @@ export function kamera(keys: KKey[], t: number): KCam {
   const raw = (t - a.t) / (b.t - a.t);
   const prevFly = i === 0 || a.fly, nextFly = i === n - 2 || keys[i + 2]?.fly;
   // первый полёт ролика стартует сразу на скорости (хук: первые секунды не тянем), остальные — разгон и торможение
-  const flyEase = (b.ease ?? (i === 0 ? "out" : "inOut")) === "out" ? 1 - (1 - raw) ** 3 : inOut(raw);
+  const eK = b.ease ?? (i === 0 ? "out" : "inOut");
+  // sine: пик скорости ×1,57 от средней (у кубической ×3) — перелёт без смаза (ролик 68, 24.11.2026)
+  const flyEase = eK === "out" ? 1 - (1 - raw) ** 3 : eK === "sine" ? (1 - Math.cos(Math.PI * raw)) / 2 : inOut(raw);
   const u = b.fly ? flyEase : prevFly && nextFly ? sm(0, 1, raw) : prevFly ? 1 - (1 - raw) ** 2 : nextFly ? raw * raw : raw;
   const bearing = lerp(a.bearing ?? 0, b.bearing ?? 0, u), tilt = lerp(a.tilt ?? 0, b.tilt ?? 0, u);
   if (b.fly) {

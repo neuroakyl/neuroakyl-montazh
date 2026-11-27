@@ -3,11 +3,11 @@ import { H, W, back, inOut, k, lerp, rand, sharp } from "../../lib";
 import { B, P, font } from "./recept";
 
 /**
- * Банк появления заголовков и крупных слов: 14 видов. Цвет и шрифт — из бренда (постоянные), вид — из рецепта (меняется).
+ * Банк появления заголовков и крупных слов: 15 видов (fast — основной, свод 27.11). Цвет и шрифт — из бренда (постоянные), вид — из рецепта (меняется).
  *   <Title t={t} a={at("слово")} text="ГЛАВНОЕ *СЛОВО*" y={300} />   — *звёздочки* = слово цветом бренда
  *   kind — свой вид для сцены; не указан — P.tekst из рецепта. out — когда уйти.
  */
-export const TEKST = ["blur", "pop", "rise", "type", "letters", "drop", "slide", "box", "underline", "glitch", "flip", "wave", "stamp", "split"] as const;
+export const TEKST = ["fast", "blur", "pop", "rise", "type", "letters", "drop", "slide", "box", "underline", "glitch", "flip", "wave", "stamp", "split"] as const;
 export type TekstKind = (typeof TEKST)[number];
 
 type Tok = { w: string; acc: boolean };
@@ -42,6 +42,12 @@ export const Title: React.FC<{
     const u = k(s, d, 0.28, sharp);
     const st: React.CSSProperties = { ...base, color: col(tk), textShadow: shadow };
     switch (kd) {
+      case "fast": {
+        // слово встаёт на своё место (свод 27.11, 13 из 13 эталонов): 1-й кадр 50 % и ниже на 1,5 % высоты, на месте за 0,08 с,
+        // без размытия и масштаба; слова по одному с шагом 0,07 с (лучше — по голосу: kit/trend BlurWords / BigSmall)
+        const uf = k(s, d, 0.08, sharp);
+        return <span style={{ ...st, opacity: s < d ? 0 : lerp(0.5, 1, uf), transform: `translateY(${lerp(H * 0.015, 0, uf)}px)` }}>{tk.w}</span>;
+      }
       case "blur":
         return <span style={{ ...st, opacity: Math.min(1, u * 1.6), filter: `blur(${lerp(10, 0, u)}px)`, transform: `scale(${lerp(1.08, 1, u)})` }}>{tk.w}</span>;
       case "pop":

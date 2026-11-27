@@ -5,16 +5,16 @@ import { B, P, font, hexA } from "./recept";
 
 /**
  * Банк субтитров: 10 видов. Цвет и шрифт — из бренда, вид — из рецепта (P.subs) или свой kind.
- *   <Subs t={t} y={1460} />          list — свои слова (тело + концовка), hide — интервалы без субтитров
+ *   <Subs t={t} y={1330} />  — y = верх блока; две строки по 70 px кончаются ≈ y+180, низ безопасной зоны 1540 (tekst.py)          list — свои слова (тело + концовка), hide — интервалы без субтитров
  * karaoke — звучащее слово цветом; box — звучащее слово в плашке; single — одно слово крупно; underline — черта под словом;
  * outline — контур, звучащее залито; pill — кусок на тёмной капсуле; glow — неоновое свечение; lower — спокойные строчные
  * в две строки; bounce — звучащее слово подпрыгивает; marker — маркер-выделитель за словом.
  */
-export const SUBS = ["karaoke", "box", "single", "underline", "outline", "pill", "glow", "lower", "bounce", "marker"] as const;
+export const SUBS = ["build", "karaoke", "box", "single", "underline", "outline", "pill", "glow", "lower", "bounce", "marker"] as const;
 
 const clean = (s: string) => s.replace(/[«»"…]/g, "").replace(/\.\.\./g, "");
 
-export const Subs: React.FC<{ t: number; y?: number; list?: Word[]; hide?: [number, number][]; kind?: string; size?: number }> = ({ t, y = 1460, list, hide = [], kind, size }) => {
+export const Subs: React.FC<{ t: number; y?: number; list?: Word[]; hide?: [number, number][]; kind?: string; size?: number }> = ({ t, y = 1330, list, hide = [], kind, size }) => {
   const kd = kind ?? P.subs;
   const ws = list ?? WORDS;
   const all = React.useMemo(() => chunks(ws), [ws]);
@@ -35,13 +35,36 @@ export const Subs: React.FC<{ t: number; y?: number; list?: Word[]; hide?: [numb
 
   const c = all.find((q) => t >= q.a - 0.04 && t < q.b);
   if (!c) return null;
+
+  // build — фраза собирается по словам ровно с голосом (13 эталонов Бобби 27.11: 05, 04, 11, 12, уроки 14–15): слова нет, пока
+  // его не сказали; встаёт за 2–3 кадра (1-й кадр 50 % и ниже на 1,5 % высоты), без размытия и масштаба; жирный гротеск
+  // в обычном регистре; число и слово с «!» — акцент цветом бренда со свечением; группа исчезает за 1 кадр.
+  if (kd === "build") {
+    const fsb = size ?? 66;
+    return (
+      <div style={{ position: "absolute", left: 140, right: 140, top: y, display: "flex", flexWrap: "wrap", justifyContent: "center", gap: `0 ${fsb * 0.26}px` }}>
+        {c.ws.map((w, i) => {
+          if (t < w.start - 0.02) return null;
+          const u = k(t, w.start - 0.02, 0.08, sharp);
+          const key = /\d/.test(w.text) || /!$/.test(w.text);
+          return (
+            <span key={i} style={{ fontFamily: font(B.text), fontWeight: 800, fontSize: key ? fsb * 1.12 : fsb, lineHeight: 1.08, letterSpacing: "-0.015em",
+              color: key ? B.accent : B.light, opacity: lerp(0.5, 1, u), transform: `translateY(${lerp(29, 0, u)}px)`, display: "inline-block", whiteSpace: "nowrap",
+              textShadow: key ? `0 0 8px ${hexA(B.accent, 0.9)}, 0 0 24px ${hexA(B.accent, 0.45)}, 0 3px 14px rgba(0,0,0,0.7)` : "0 3px 14px rgba(0,0,0,0.75)" }}>
+              {clean(w.text)}
+            </span>
+          );
+        })}
+      </div>
+    );
+  }
   const u = k(t, c.a - 0.04, 0.16, sharp);
   const lower = kd === "lower";
   const fs = size ?? (lower ? 52 : 70);
   const wrap: React.CSSProperties = {
     position: "absolute",
-    left: 90,
-    right: 90,
+    left: 140, // справа кнопки Instagram (ремесло.md §7, tekst.py)
+    right: 140,
     top: y,
     display: "flex",
     flexWrap: "wrap",
