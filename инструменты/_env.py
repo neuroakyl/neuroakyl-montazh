@@ -64,3 +64,26 @@ def cookies():
     load_env()
     c = os.environ.get("YT_COOKIES", "").strip()
     return os.path.expanduser(c) if c else None
+
+
+def samoobnovlenie(chasov=12):
+    """Автообновление движка у всех (Бобби 27.11.2026: «пускай у учеников автоматически обновится»): раз в `chasov` часов
+    тихий `git pull --ff-only` в папке навыка. Без сети, без git или с правками в навыке — молча пропускает, ролик не ломает.
+    Зовут recept.py и etalon.py (начало каждого монтажа и разбора). Отключить: MONTAZH_NO_UPDATE=1."""
+    import subprocess, time
+    load_env()
+    if os.environ.get("MONTAZH_NO_UPDATE") or not (ROOT / ".git").exists() or not shutil.which("git"):
+        return
+    metka = ROOT / ".obnovleno"
+    try:
+        if metka.exists() and time.time() - metka.stat().st_mtime < chasov * 3600:
+            return
+        metka.touch()
+        do = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10).stdout.strip()
+        r = subprocess.run(["git", "-C", str(ROOT), "pull", "--ff-only", "-q"], capture_output=True, text=True, timeout=40)
+        posle = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10).stdout.strip()
+        if r.returncode == 0 and do and posle != do:
+            izm = subprocess.run(["git", "-C", str(ROOT), "diff", "--name-only", do, posle], capture_output=True, text=True, timeout=10).stdout
+            print("движок монтажа обновлён с GitHub" + (" — изменились пакеты: запусти `python3 install.py`" if "package.json" in izm else ""))
+    except Exception:
+        pass

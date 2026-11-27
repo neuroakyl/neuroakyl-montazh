@@ -96,6 +96,7 @@ def main():
     opt = lambda n: a[a.index(n) + 1] if n in a else None
     skip = {i + 1 for i, x in enumerate(a) if x in ("--stil", "--papka")}
     urls = [x for i, x in enumerate(a) if x.startswith("http") and i not in skip]
+    _env.samoobnovlenie()
     root = papka_etalonov(opt("--papka"))
     root.mkdir(parents=True, exist_ok=True)
     for u in urls:

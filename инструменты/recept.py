@@ -332,6 +332,10 @@ def proverka():
 
 
 if __name__ == "__main__":
+    try:  # автообновление движка раз в 12 ч (_env.samoobnovlenie)
+        sys.path.insert(0, str(ROOT / "инструменты")); import _env; _env.samoobnovlenie()
+    except Exception:
+        pass
     a = sys.argv[1:]
     if "--pokaz" in a:
         pokaz()
